@@ -6,14 +6,20 @@ import {
   useRef,
   useState,
 } from 'react'
-import { LoaderCircle, MapPinned, Search, Sparkles, X } from 'lucide-react'
+import {
+  CloudLightning,
+  LoaderCircle,
+  MapPinned,
+  Search,
+  Sparkles,
+  X,
+} from 'lucide-react'
 import maplibregl, {
   type GeoJSONSource,
   type MapGeoJSONFeature,
   type MapLayerMouseEvent,
 } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import winstonPng from '@images/WinstonTheWeathervane.png'
 import {
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
@@ -293,7 +299,7 @@ function MapTopbar() {
   return (
     <header className="map-page__topbar">
       <div className="map-page__brand">
-        <img src={winstonPng} alt="" width={50} height={50} />
+        <CloudLightning aria-hidden="true" size={20} />
         <span>Weather Guardians</span>
       </div>
 
