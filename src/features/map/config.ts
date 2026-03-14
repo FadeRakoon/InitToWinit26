@@ -5,7 +5,7 @@ export const MAP_STYLE_URL =
 
 export const GEOCODER_ENDPOINT = 'https://photon.komoot.io/api/'
 
-export const DEFAULT_MAP_CENTER: LngLatTuple = [-74.006, 40.7128]
+export const DEFAULT_MAP_CENTER: LngLatTuple = [-76.7928, 17.9714]
 export const DEFAULT_MAP_ZOOM = 12
 
 export const GRID_ROWS = 20
