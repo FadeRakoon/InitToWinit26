@@ -1,8 +1,9 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
-import Footer from '../components/Footer'
-import Header from '../components/Header'
+import {
+  HeadContent,
+  Link,
+  Scripts,
+  createRootRoute,
+} from '@tanstack/react-router'
 
 import appCss from '../styles.css?url'
 
@@ -19,7 +20,7 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'TanStack Start Starter',
+        title: 'Yaad Guard',
       },
     ],
     links: [
@@ -27,8 +28,13 @@ export const Route = createRootRoute({
         rel: 'stylesheet',
         href: appCss,
       },
+      {
+        rel: 'stylesheet',
+        href: 'https://unpkg.com/maplibre-gl@5.20.1/dist/maplibre-gl.css',
+      },
     ],
   }),
+  notFoundComponent: NotFoundPage,
   shellComponent: RootDocument,
 })
 
@@ -40,22 +46,40 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(79,184,178,0.24)]">
-        <Header />
         {children}
-        <Footer />
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'Tanstack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
         <Scripts />
       </body>
     </html>
+  )
+}
+
+function NotFoundPage() {
+  return (
+    <main className="page-wrap px-4 py-20 sm:py-28">
+      <section className="glass-panel rounded-[2rem] px-6 py-10 text-center sm:px-10 sm:py-14">
+        <p className="section-label mb-4">Route Not Found</p>
+        <h1 className="font-display text-4xl font-bold text-[var(--ink)] sm:text-5xl">
+          That page does not exist.
+        </h1>
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-[var(--ink-soft)]">
+          The requested route could not be matched. Return to the landing page or
+          jump straight into the map experience.
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link
+            to="/"
+            className="inline-flex items-center rounded-full bg-[linear-gradient(135deg,var(--accent),#7ee7c8)] px-5 py-3 text-sm font-semibold text-slate-950 no-underline shadow-[0_16px_36px_var(--accent-glow)] hover:-translate-y-0.5"
+          >
+            Go Home
+          </Link>
+          <Link
+            to="/map"
+            className="inline-flex items-center rounded-full border border-[var(--line-strong)] bg-[rgba(8,21,39,0.52)] px-5 py-3 text-sm font-semibold text-[var(--ink)] no-underline hover:-translate-y-0.5 hover:bg-[rgba(8,21,39,0.68)]"
+          >
+            Open Map
+          </Link>
+        </div>
+      </section>
+    </main>
   )
 }
