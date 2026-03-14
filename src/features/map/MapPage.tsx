@@ -1,5 +1,11 @@
 import { Link } from '@tanstack/react-router'
-import { startTransition, useEffect, useEffectEvent, useRef, useState } from 'react'
+import {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from 'react'
 import {
   CloudLightning,
   LoaderCircle,
@@ -62,7 +68,11 @@ export default function MapPage() {
   }, [])
 
   const queueAnalysis = useEffectEvent(
-    (payload: { kind: 'cell' | 'search'; label: string; center: LngLatTuple }) => {
+    (payload: {
+      kind: 'cell' | 'search'
+      label: string
+      center: LngLatTuple
+    }) => {
       if (analysisTimeoutRef.current !== null) {
         window.clearTimeout(analysisTimeoutRef.current)
       }
@@ -174,7 +184,11 @@ export default function MapPage() {
               void handleSearchSubmit()
             }}
           >
-            <Search aria-hidden="true" className="map-page__search-icon" size={18} />
+            <Search
+              aria-hidden="true"
+              className="map-page__search-icon"
+              size={18}
+            />
             <input
               type="text"
               value={searchQuery}
@@ -184,14 +198,20 @@ export default function MapPage() {
             />
             <button type="submit" disabled={isSearching}>
               {isSearching ? (
-                <LoaderCircle aria-hidden="true" size={18} className="is-spinning" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  size={18}
+                  className="is-spinning"
+                />
               ) : (
                 <Sparkles aria-hidden="true" size={18} />
               )}
               <span className="sr-only">Search the map</span>
             </button>
           </form>
-          {searchMessage ? <p className="map-page__search-note">{searchMessage}</p> : null}
+          {searchMessage ? (
+            <p className="map-page__search-note">{searchMessage}</p>
+          ) : null}
         </div>
 
         <aside className="map-page__sidebar">
@@ -200,7 +220,11 @@ export default function MapPage() {
               <p className="map-page__eyebrow">Region Analysis</p>
               <h1>Operational view</h1>
             </div>
-            <button type="button" onClick={closeSidebar} aria-label="Reset sidebar">
+            <button
+              type="button"
+              onClick={closeSidebar}
+              aria-label="Reset sidebar"
+            >
               <X size={18} />
             </button>
           </div>
@@ -209,13 +233,19 @@ export default function MapPage() {
             {panelState.status === 'empty' ? (
               <div className="map-page__state map-page__state--empty">
                 <MapPinned aria-hidden="true" size={40} />
-                <p>Select a grid cell or search for a place to generate insights.</p>
+                <p>
+                  Select a grid cell or search for a place to generate insights.
+                </p>
               </div>
             ) : null}
 
             {panelState.status === 'loading' ? (
               <div className="map-page__state map-page__state--loading">
-                <LoaderCircle aria-hidden="true" size={36} className="is-spinning" />
+                <LoaderCircle
+                  aria-hidden="true"
+                  size={36}
+                  className="is-spinning"
+                />
                 <p>Analyzing {panelState.label}...</p>
               </div>
             ) : null}
@@ -237,7 +267,8 @@ export default function MapPage() {
                     <p key={paragraph}>{paragraph}</p>
                   ))}
                   <p>
-                    Recommendation: <em>{panelState.analysis.recommendation}</em>
+                    Recommendation:{' '}
+                    <em>{panelState.analysis.recommendation}</em>
                   </p>
                 </div>
 
@@ -275,11 +306,7 @@ function MapTopbar() {
       <nav className="map-page__nav" aria-label="Map page navigation">
         <Link to="/">Home</Link>
         <a href="/#technology">Technology</a>
-        <a
-          href="https://maplibre.org"
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a href="https://maplibre.org" target="_blank" rel="noreferrer">
           MapLibre
         </a>
         <Link to="/map" className="is-active">
@@ -388,7 +415,11 @@ function MapCanvas({
     const handleClick = (event: MapLayerMouseEvent) => {
       const feature = event.features?.[0] as MapGeoJSONFeature | undefined
 
-      if (!feature || feature.id === undefined || feature.geometry.type !== 'Polygon') {
+      if (
+        !feature ||
+        feature.id === undefined ||
+        feature.geometry.type !== 'Polygon'
+      ) {
         return
       }
 
