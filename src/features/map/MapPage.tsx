@@ -11,6 +11,7 @@ import {
   LoaderCircle,
   MapPin,
   MapPinned,
+  Mountain,
   Search,
   Sparkles,
   X,
@@ -26,6 +27,8 @@ import {
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
   GRID_FILL_LAYER_ID,
+  GRID_LAT_STEP,
+  GRID_LNG_STEP,
   GRID_OUTLINE_LAYER_ID,
   GRID_SOURCE_ID,
   MAP_STYLE_URL,
@@ -35,11 +38,13 @@ import { createGridFeatureCollection } from './grid'
 import { searchPlaces } from './search'
 import { useDebounce } from '../../hooks/useDebounce'
 import type {
+  BoundsTuple,
   GridCellFeature,
   LngLatTuple,
   RegionAnalysis,
   SearchResult,
 } from './types'
+import { TerrainPopup } from './TerrainPopup'
 
 type PanelState =
   | { status: 'empty' }
@@ -52,6 +57,12 @@ interface FocusTarget {
   result: SearchResult
 }
 
+interface TerrainView {
+  cellId: string
+  center: LngLatTuple
+  bounds: BoundsTuple
+}
+
 export default function MapPage() {
   const [panelState, setPanelState] = useState<PanelState>({ status: 'empty' })
   const [gridCenter, setGridCenter] = useState<LngLatTuple>(DEFAULT_MAP_CENTER)
@@ -61,17 +72,16 @@ export default function MapPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [clearSelectionVersion, setClearSelectionVersion] = useState(0)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-
   const [suggestions, setSuggestions] = useState<SearchResult[]>([])
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
   const debouncedQuery = useDebounce(searchQuery, 600)
-
   const isWaiting =
     !isTyping && searchQuery.trim() !== '' && searchQuery !== debouncedQuery
-
+  const [terrainView, setTerrainView] = useState<TerrainView | null>(null)
+  const [showTerrainPopup, setShowTerrainPopup] = useState(false)
   const analysisTimeoutRef = useRef<number | null>(null)
   const typingTimeoutRef = useRef<number | null>(null)
 
@@ -174,10 +184,24 @@ export default function MapPage() {
 
   const handleCellSelect = useEffectEvent((feature: GridCellFeature) => {
     setSearchMessage(null)
+    setShowTerrainPopup(false)
+    const centerLng = feature.properties.centerLng
+    const centerLat = feature.properties.centerLat
+    const halfLatStep = GRID_LAT_STEP / 2
+    const halfLngStep = GRID_LNG_STEP / 2
+    const bounds: BoundsTuple = [
+      [centerLng - halfLngStep, centerLat - halfLatStep],
+      [centerLng + halfLngStep, centerLat + halfLatStep],
+    ]
+    setTerrainView({
+      cellId: feature.properties.cellId,
+      center: [centerLng, centerLat],
+      bounds,
+    })
     queueAnalysis({
       kind: 'cell',
       label: feature.properties.cellId,
-      center: [feature.properties.centerLng, feature.properties.centerLat],
+      center: [centerLng, centerLat],
     })
   })
 
@@ -187,6 +211,8 @@ export default function MapPage() {
       id: `${result.label}:${Date.now()}`,
       result: result,
     })
+    setTerrainView(null)
+    setShowTerrainPopup(false)
     setSearchQuery('')
     setSuggestions([])
     setIsDropdownOpen(false)
@@ -249,8 +275,8 @@ export default function MapPage() {
       window.clearTimeout(analysisTimeoutRef.current)
       analysisTimeoutRef.current = null
     }
-
     setIsSidebarOpen(false)
+    setShowTerrainPopup(false)
   })
 
   const activityClassName =
@@ -555,12 +581,36 @@ export default function MapPage() {
                       </strong>
                     </article>
                   </motion.div>
+
+                  {terrainView && (
+                    <motion.button
+                      type="button"
+                      variants={{
+                        hidden: { opacity: 0, y: 10 },
+                        visible: { opacity: 1, y: 0 },
+                      }}
+                      className="map-page__terrain-button"
+                      onClick={() => setShowTerrainPopup(true)}
+                    >
+                      <Mountain aria-hidden="true" size={18} />
+                      <span>View Terrain</span>
+                    </motion.button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         </aside>
       </section>
+
+      {showTerrainPopup && terrainView && (
+        <TerrainPopup
+          cellId={terrainView.cellId}
+          center={terrainView.center}
+          bounds={terrainView.bounds}
+          onClose={() => setShowTerrainPopup(false)}
+        />
+      )}
     </main>
   )
 }
