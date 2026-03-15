@@ -1000,11 +1000,15 @@ a {
   gap: 1rem;
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(11, 28, 49, 0.94), rgba(7, 17, 27, 0.88)),
+    rgba(7, 17, 27, 0.9);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .terrain-popup__eyebrow {
   margin: 0 0 0.25rem;
-  color: var(--ink-faint);
+  color: rgba(183, 240, 255, 0.78);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -1013,10 +1017,11 @@ a {
 
 .terrain-popup__heading {
   margin: 0;
-  color: var(--ink);
+  color: #f5fbff;
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.02em;
+  text-shadow: 0 1px 18px rgba(96, 212, 255, 0.16);
 }
 
 .terrain-popup__close {
@@ -1041,15 +1046,47 @@ a {
 .terrain-popup__body {
   position: relative;
   flex: 1;
-  min-height: 400px;
   overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 55%),
+    rgba(7, 17, 27, 0.88);
+}
+
+.terrain-popup__focus-badge {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 2;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(96, 212, 255, 0.28);
+  border-radius: 0.9rem;
+  background: rgba(6, 16, 30, 0.8);
+  box-shadow: 0 12px 32px rgba(2, 8, 23, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.terrain-popup__focus-badge strong {
+  color: #f5fbff;
+  font-size: 0.98rem;
+  letter-spacing: 0.02em;
+}
+
+.terrain-popup__focus-label {
+  color: rgba(183, 240, 255, 0.72);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .terrain-popup__map {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
-  height: 100%;
+  height: clamp(360px, 46vh, 520px);
+  min-height: 360px;
   transition: opacity 0.3s ease;
 }
 
