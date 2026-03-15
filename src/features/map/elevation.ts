@@ -57,14 +57,26 @@ async function loadTerrainRaster(
     path.join(process.cwd(), 'public', 'caribbean_tiles', tileFilename),
   ].filter(Boolean) as string[]
 
+  console.log('[loadTerrainRaster] Trying to load:', tileFilename)
+  console.log('[loadTerrainRaster] Local candidates:', localCandidates)
+  console.log('[loadTerrainRaster] S3 key:', s3Key)
+
   for (const localPath of localCandidates) {
     const raster = await loadRasterFromPath(localPath)
     if (raster) {
+      console.log('[loadTerrainRaster] Loaded from local:', localPath)
       return raster
     }
   }
 
-  return loadRasterFromS3Key(s3Key)
+  console.log('[loadTerrainRaster] No local file found, trying S3...')
+  const s3Raster = await loadRasterFromS3Key(s3Key)
+  if (s3Raster) {
+    console.log('[loadTerrainRaster] Loaded from S3:', s3Key)
+  } else {
+    console.log('[loadTerrainRaster] Failed to load from S3:', s3Key)
+  }
+  return s3Raster
 }
 
 async function loadRasterFromPath(localPath: string) {
@@ -102,7 +114,11 @@ async function loadRasterFromS3Key(key: string) {
       const client = createS3Client()
       const bucket = process.env.SOURCE_BUCKET
 
+      console.log('[loadRasterFromS3Key] Bucket:', bucket, 'Key:', key)
+      console.log('[loadRasterFromS3Key] S3Client created:', !!client)
+
       if (!client || !bucket) {
+        console.log('[loadRasterFromS3Key] Missing client or bucket')
         return undefined
       }
 
@@ -116,8 +132,11 @@ async function loadRasterFromS3Key(key: string) {
 
         const bytes = await response.Body?.transformToByteArray()
         if (!bytes) {
+          console.log('[loadRasterFromS3Key] No response body')
           return undefined
         }
+
+        console.log('[loadRasterFromS3Key] Received bytes:', bytes.length)
 
         const dataset = await fromArrayBuffer(
           bytes.buffer.slice(
@@ -127,13 +146,21 @@ async function loadRasterFromS3Key(key: string) {
         )
         const image = await dataset.getImage()
 
+        console.log(
+          '[loadRasterFromS3Key] GeoTIFF loaded, size:',
+          image.getWidth(),
+          'x',
+          image.getHeight(),
+        )
+
         return {
           dataset,
           image,
           bbox: toBboxTuple(image.getBoundingBox()),
           nodata: image.getGDALNoData(),
         } satisfies RasterDataset
-      } catch {
+      } catch (err) {
+        console.error('[loadRasterFromS3Key] Error loading from S3:', err)
         return undefined
       }
     })()
@@ -173,15 +200,31 @@ export const fetchSubGridElevations = createServerFn({ method: 'POST' })
     const centerLat = (south + north) / 2
 
     const tileFilename = getTileFilename(centerLng, centerLat)
+    console.log(
+      '[fetchSubGridElevations] Loading tile:',
+      tileFilename,
+      'for center:',
+      centerLng,
+      centerLat,
+    )
+
     const raster = await loadTerrainRaster(tileFilename)
 
     if (!raster) {
+      console.log('[fetchSubGridElevations] Failed to load tile:', tileFilename)
       return {
         success: false,
         error: `Terrain tile not found: ${tileFilename}`,
         elevations: [],
       }
     }
+
+    console.log(
+      '[fetchSubGridElevations] Loaded raster, bbox:',
+      raster.bbox,
+      'nodata:',
+      raster.nodata,
+    )
 
     const rasterBbox = intersectBboxes([west, south, east, north], raster.bbox)
 
