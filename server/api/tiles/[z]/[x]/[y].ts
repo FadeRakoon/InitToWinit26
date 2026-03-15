@@ -9,6 +9,8 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 const S3_ENDPOINT = process.env.S3_ENDPOINT || 'https://t3.storageapi.dev'
 const S3_BUCKET = process.env.SOURCE_BUCKET || 'organized-satchel-dyu5zvi'
 const S3_REGION = process.env.AWS_REGION || 'auto'
+const MAX_RETRIES = 3
+const RETRY_DELAY_MS = 500
 
 console.log('[tiles] Initializing S3 client')
 console.log('[tiles] Endpoint:', S3_ENDPOINT)
@@ -30,6 +32,50 @@ const s3Client = new S3Client({
   },
 })
 
+async function fetchTileWithRetry(
+  key: string,
+  retries: number = MAX_RETRIES,
+): Promise<Uint8Array | null> {
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+      })
+
+      const response = await s3Client.send(command)
+
+      if (!response.Body) {
+        throw new Error('Empty response body')
+      }
+
+      const bytes = await response.Body.transformToByteArray()
+      console.log(
+        `[tiles] Successfully fetched ${key} on attempt ${attempt}, size: ${bytes.length}`,
+      )
+      return bytes
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      console.warn(
+        `[tiles] Attempt ${attempt}/${retries} failed for ${key}:`,
+        lastError.message,
+      )
+
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+      }
+    }
+  }
+
+  console.error(
+    `[tiles] All ${retries} attempts failed for ${key}:`,
+    lastError?.message,
+  )
+  return null
+}
+
 export default defineEventHandler(async (event) => {
   const z = getRouterParam(event, 'z')
   const x = getRouterParam(event, 'x')
@@ -50,56 +96,21 @@ export default defineEventHandler(async (event) => {
 
   console.log('[tiles] Fetching from S3:', key)
 
-  const command = new GetObjectCommand({
-    Bucket: S3_BUCKET,
-    Key: key,
-  })
+  const tileData = await fetchTileWithRetry(key)
 
-  try {
-    const response = await s3Client.send(command)
-    console.log(
-      '[tiles] S3 response received, ContentLength:',
-      response.ContentLength,
-    )
-
-    const stream = response.Body
-    if (!stream) {
-      console.log('[tiles] No body in S3 response')
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Tile not found',
-      })
-    }
-
-    const chunks: Uint8Array[] = []
-    const reader = stream.transformToWebStream().getReader()
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(value)
-    }
-
-    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0)
-    const buffer = new Uint8Array(totalLength)
-    let offset = 0
-    for (const chunk of chunks) {
-      buffer.set(chunk, offset)
-      offset += chunk.length
-    }
-
-    console.log('[tiles] Tile fetched successfully, size:', buffer.length)
-
-    setResponseHeader(event, 'Content-Type', 'image/png')
-    setResponseHeader(event, 'Cache-Control', 'public, max-age=3600')
-    setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
-
-    return buffer
-  } catch (error) {
-    console.error('[tiles] Error fetching tile from S3:', key, error)
+  if (!tileData) {
+    console.log('[tiles] Tile not found after retries:', key)
     throw createError({
       statusCode: 404,
       statusMessage: 'Tile not found',
     })
   }
+
+  console.log('[tiles] Tile fetched successfully, size:', tileData.length)
+
+  setResponseHeader(event, 'Content-Type', 'image/png')
+  setResponseHeader(event, 'Cache-Control', 'public, max-age=3600')
+  setResponseHeader(event, 'Access-Control-Allow-Origin', '*')
+
+  return tileData
 })
