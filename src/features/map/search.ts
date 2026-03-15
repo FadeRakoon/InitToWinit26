@@ -3,9 +3,9 @@ import type { SearchResult } from './types'
 
 interface PhotonFeature {
   geometry?: {
-    coordinates?: [number, number]
+    coordinates?: number[]
   }
-  bbox?: [number, number, number, number]
+  bbox?: number[]
   properties?: {
     name?: string
     street?: string
@@ -18,6 +18,10 @@ interface PhotonFeature {
 
 interface PhotonResponse {
   features?: PhotonFeature[]
+}
+
+function isPhotonResponse(value: unknown): value is PhotonResponse {
+  return typeof value === 'object' && value !== null
 }
 
 export async function searchPlaces(query: string): Promise<SearchResult[]> {
@@ -43,29 +47,33 @@ export async function searchPlaces(query: string): Promise<SearchResult[]> {
     throw new Error('Location lookup failed.')
   }
 
-  const payload = (await response.json()) as PhotonResponse
+  const payload: unknown = await response.json()
+  const features = isPhotonResponse(payload) ? payload.features ?? [] : []
 
-  return (payload.features ?? [])
-    .map((feature) => {
-      const coordinates = feature.geometry?.coordinates
-      if (!coordinates || coordinates.length < 2) {
-        return null
-      }
+  const results: (SearchResult | null)[] = features.map((feature) => {
+    const coordinates = feature.geometry?.coordinates
+    if (!coordinates || coordinates.length < 2) {
+      return null
+    }
 
-      const [lng, lat] = coordinates
+    const [lng, lat] = coordinates
+    const center: SearchResult['center'] = [lng, lat]
+    const bounds: SearchResult['bounds'] | undefined =
+      feature.bbox && feature.bbox.length >= 4
+      ? [
+          [feature.bbox[0], feature.bbox[1]],
+          [feature.bbox[2], feature.bbox[3]],
+        ]
+      : undefined
 
-      return {
-        label: formatLabel(feature),
-        center: [lng, lat] as const,
-        bounds: feature.bbox
-          ? [
-              [feature.bbox[0], feature.bbox[1]],
-              [feature.bbox[2], feature.bbox[3]],
-            ]
-          : undefined,
-      }
-    })
-    .filter((result): result is SearchResult => result !== null)
+    return {
+      label: formatLabel(feature),
+      center,
+      ...(bounds ? { bounds } : {}),
+    }
+  })
+
+  return results.filter((result): result is SearchResult => result !== null)
 }
 
 function formatLabel(feature: PhotonFeature) {
