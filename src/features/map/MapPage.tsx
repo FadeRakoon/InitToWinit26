@@ -1178,9 +1178,7 @@ function MapCanvas({
       return
     }
 
-    source.setData(
-      createGridFeatureCollection({ center: gridCenter }),
-    )
+    source.setData(createGridFeatureCollection({ center: gridCenter }))
   }, [gridCenter])
 
   useEffect(() => {
@@ -1250,26 +1248,37 @@ function MapCanvas({
       return
     }
 
-    const SUBGrid_SIZE = 20
+    const SUB_GRID_SIZE = 20
     const [[west, south], [east, north]] = selectedCellBounds
-    const latStep = (north - south) / SUBGrid_SIZE
-    const lngStep = (east - west) / SUBGrid_SIZE
+    const latStep = (north - south) / SUB_GRID_SIZE
+    const lngStep = (east - west) / SUB_GRID_SIZE
+
+    console.log('[WaterOverlay] Bounds:', { west, south, east, north })
+    console.log('[WaterOverlay] Steps:', { latStep, lngStep })
+    console.log('[WaterOverlay] waterDepths length:', waterDepths.length)
+    console.log('[WaterOverlay] waterDepths sample:', waterDepths.slice(0, 25))
 
     // Create GeoJSON polygons for each sub-grid cell
+    // Row 0 is at TOP (north), row (SUB_GRID_SIZE-1) is at BOTTOM (south)
+    // Col 0 is at LEFT (west), col (SUB_GRID_SIZE-1) is at RIGHT (east)
     const features: GeoJSON.Feature<GeoJSON.Polygon>[] = []
+    const featuresByRow: number[] = new Array(SUB_GRID_SIZE).fill(0)
 
-    for (let row = 0; row < SUBGrid_SIZE; row++) {
-      for (let col = 0; col < SUBGrid_SIZE; col++) {
-        const idx = row * SUBGrid_SIZE + col
+    for (let row = 0; row < SUB_GRID_SIZE; row++) {
+      for (let col = 0; col < SUB_GRID_SIZE; col++) {
+        const idx = row * SUB_GRID_SIZE + col
         const depth = waterDepths[idx] ?? 0
 
         if (depth <= 0) continue
 
-        const cellWest = west + lngStep * col
-        const cellEast = west + lngStep * (col + 1)
-        const cellSouth = south + latStep * (SUBGrid_SIZE - row - 1)
-        const cellNorth = south + latStep * (SUBGrid_SIZE - row)
+        // Row 0 starts at north, each row moves south by latStep
+        const cellNorth = north - row * latStep
+        const cellSouth = cellNorth - latStep
+        // Col 0 starts at west, each col moves east by lngStep
+        const cellWest = west + col * lngStep
+        const cellEast = cellWest + lngStep
 
+        featuresByRow[row]++
         features.push({
           type: 'Feature',
           properties: { depth },
@@ -1288,6 +1297,9 @@ function MapCanvas({
         })
       }
     }
+
+    console.log('[WaterOverlay] Features by row:', featuresByRow)
+    console.log('[WaterOverlay] Total features:', features.length)
 
     if (features.length === 0) return
 
