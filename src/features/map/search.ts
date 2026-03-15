@@ -30,6 +30,8 @@ export async function searchPlaces(query: string): Promise<SearchResult[]> {
   const url = new URL(GEOCODER_ENDPOINT)
   url.searchParams.set('q', trimmedQuery)
   url.searchParams.set('limit', '5')
+  // Restrict search to Latin America and the Caribbean region (minLon, minLat, maxLon, maxLat)
+  url.searchParams.set('bbox', '-118.0,-56.0,-34.0,33.0')
 
   const response = await fetch(url.toString(), {
     headers: {

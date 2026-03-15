@@ -5,7 +5,7 @@ export const Route = createFileRoute('/map')({
   head: () => ({
     meta: [
       {
-        title: 'Weather Guardians Map',
+        title: 'Yaad Guard Map',
       },
     ],
   }),
