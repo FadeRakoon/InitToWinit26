@@ -81,6 +81,52 @@ function isGeoJSONSource(
   return source?.type === 'geojson' && 'setData' in source
 }
 
+function getLandslideRiskSummary(metrics: RegionInsightResponse['metrics']) {
+  const slopeAngle = metrics.feasibleSlopeAngleDeg
+  const nearbyStormCount = metrics.nearbyStormCount ?? 0
+
+  if (slopeAngle === undefined) {
+    return {
+      band: 'Unavailable',
+      bandClass: 'bg-slate-600/20 text-slate-300 border border-slate-500/30',
+      explanation:
+        'Landslide signal is unavailable because slope context could not be derived for this area.',
+    }
+  }
+
+  if (slopeAngle >= 22) {
+    return {
+      band: 'Elevated',
+      bandClass: 'bg-red-500/20 text-red-300 border border-red-500/30',
+      explanation:
+        nearbyStormCount > 0
+          ? 'Steeper terrain plus repeated nearby storms can increase saturation-driven slope failure pressure.'
+          : 'Steeper terrain suggests stronger slope-failure potential when soils become saturated.',
+    }
+  }
+
+  if (slopeAngle >= 14) {
+    return {
+      band: 'Moderate',
+      bandClass:
+        'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
+      explanation:
+        nearbyStormCount > 0
+          ? 'Moderate slope combined with nearby storm exposure suggests some rain-triggered landslide susceptibility.'
+          : 'Moderate slope suggests some landslide susceptibility during prolonged heavy rain.',
+    }
+  }
+
+  return {
+    band: 'Lower',
+    bandClass: 'bg-green-500/20 text-green-300 border border-green-500/30',
+    explanation:
+      nearbyStormCount > 0
+        ? 'Slope geometry is gentler here, though repeated storms can still trigger isolated failures in weaker soils.'
+        : 'Slope geometry is relatively gentle here compared with steeper nearby terrain.',
+  }
+}
+
 export default function MapPage() {
   const [panelState, setPanelState] = useState<PanelState>({ status: 'empty' })
   const [gridCenter, setGridCenter] = useState<LngLatTuple>(DEFAULT_MAP_CENTER)
@@ -719,7 +765,68 @@ export default function MapPage() {
                     </div>
                   </motion.div>
 
-                  {/* 4. The Water Threat (Storm Surge Risk) */}
+                  {/* 4. Landslide Susceptibility */}
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 10 },
+                      visible: { opacity: 1, y: 0 },
+                    }}
+                    className="map-page__section"
+                  >
+                    <p className="map-page__section-label text-slate-400 font-medium">
+                      Landslide Susceptibility
+                    </p>
+                    {(() => {
+                      const landslideSummary = getLandslideRiskSummary(
+                        panelState.insight.metrics,
+                      )
+
+                      return (
+                        <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
+                          <div className="flex items-center justify-between gap-3 mb-3 border-b border-slate-700 pb-3">
+                            <span className="text-xs text-slate-400">
+                              Estimated Slope-Failure Signal
+                            </span>
+                            <span
+                              className={`px-2.5 py-1 rounded-md text-xs font-semibold ${landslideSummary.bandClass}`}
+                            >
+                              {landslideSummary.band}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 mb-3">
+                            <div>
+                              <span className="text-xs text-slate-400 block mb-1">
+                                Feasible Slope
+                              </span>
+                              <strong className="text-base text-white">
+                                {panelState.insight.metrics
+                                  .feasibleSlopeAngleDeg !== undefined
+                                  ? `${panelState.insight.metrics.feasibleSlopeAngleDeg}°`
+                                  : 'N/A'}
+                              </strong>
+                            </div>
+                            <div>
+                              <span className="text-xs text-slate-400 block mb-1">
+                                Terrain Relief
+                              </span>
+                              <strong className="text-base text-white">
+                                {panelState.insight.metrics.reliefM !== undefined
+                                  ? `${panelState.insight.metrics.reliefM}m`
+                                  : 'N/A'}
+                              </strong>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-slate-300 border-t border-slate-700 pt-2">
+                            {landslideSummary.explanation}
+                          </p>
+                        </div>
+                      )
+                    })()}
+                  </motion.div>
+
+                  {/* 5. The Water Threat (Storm Surge Risk) */}
                   <motion.div
                     variants={{
                       hidden: { opacity: 0, y: 10 },
@@ -771,7 +878,7 @@ export default function MapPage() {
                     </div>
                   </motion.div>
 
-                  {/* 5. The Wind Threat (Historical Hurricane Activity) */}
+                  {/* 6. The Wind Threat (Historical Hurricane Activity) */}
                   <motion.div
                     variants={{
                       hidden: { opacity: 0, y: 10 },
@@ -834,7 +941,7 @@ export default function MapPage() {
                     </div>
                   </motion.div>
 
-                  {/* 6. Community Context */}
+                  {/* 7. Community Context */}
                   <motion.div
                     variants={{
                       hidden: { opacity: 0, y: 10 },
@@ -1253,16 +1360,10 @@ function MapCanvas({
     const latStep = (north - south) / SUB_GRID_SIZE
     const lngStep = (east - west) / SUB_GRID_SIZE
 
-    console.log('[WaterOverlay] Bounds:', { west, south, east, north })
-    console.log('[WaterOverlay] Steps:', { latStep, lngStep })
-    console.log('[WaterOverlay] waterDepths length:', waterDepths.length)
-    console.log('[WaterOverlay] waterDepths sample:', waterDepths.slice(0, 25))
-
     // Create GeoJSON polygons for each sub-grid cell
     // Row 0 is at TOP (north), row (SUB_GRID_SIZE-1) is at BOTTOM (south)
     // Col 0 is at LEFT (west), col (SUB_GRID_SIZE-1) is at RIGHT (east)
     const features: GeoJSON.Feature<GeoJSON.Polygon>[] = []
-    const featuresByRow: number[] = new Array(SUB_GRID_SIZE).fill(0)
 
     for (let row = 0; row < SUB_GRID_SIZE; row++) {
       for (let col = 0; col < SUB_GRID_SIZE; col++) {
@@ -1278,7 +1379,6 @@ function MapCanvas({
         const cellWest = west + col * lngStep
         const cellEast = cellWest + lngStep
 
-        featuresByRow[row]++
         features.push({
           type: 'Feature',
           properties: { depth },
@@ -1297,9 +1397,6 @@ function MapCanvas({
         })
       }
     }
-
-    console.log('[WaterOverlay] Features by row:', featuresByRow)
-    console.log('[WaterOverlay] Total features:', features.length)
 
     if (features.length === 0) return
 

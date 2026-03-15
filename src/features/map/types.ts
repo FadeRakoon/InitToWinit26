@@ -54,6 +54,7 @@ export interface RegionInsightMetrics {
   elevationMeanM?: number
   elevationMaxM?: number
   reliefM?: number
+  feasibleSlopeAngleDeg?: number
   landCoveragePct?: number
   nearestSurgeStationKm?: number
   surgeRp1M?: number

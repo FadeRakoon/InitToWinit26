@@ -31,6 +31,7 @@ export const regionInsightResponseSchema = z.object({
     elevationMeanM: z.number().optional(),
     elevationMaxM: z.number().optional(),
     reliefM: z.number().optional(),
+    feasibleSlopeAngleDeg: z.number().optional(),
     landCoveragePct: z.number().optional(),
     nearestSurgeStationKm: z.number().optional(),
     surgeRp1M: z.number().optional(),

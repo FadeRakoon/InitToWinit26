@@ -41,27 +41,26 @@ function intersectBboxes(
   return [west, south, east, north]
 }
 
-function copernicusTileName(lng: number, lat: number): string {
+function getTileFilename(lng: number, lat: number): string {
   const latInt = Math.floor(Math.abs(lat))
   const latDir = lat >= 0 ? 'N' : 'S'
+  const latStr = latInt.toString().padStart(2, '0')
 
   const lngInt = Math.ceil(Math.abs(lng))
   const lngDir = lng <= 0 ? 'W' : 'E'
-
-  const latStr = latInt.toString().padStart(2, '0')
   const lngStr = lngInt.toString().padStart(3, '0')
 
   return `Copernicus_DSM_COG_10_${latDir}${latStr}_00_${lngDir}${lngStr}_00_DEM.tif`
 }
 
 async function loadTerrainRaster(
-  tileName: string,
+  tileFilename: string,
 ): Promise<RasterDataset | undefined> {
-  const s3Key = `caribbean_tiles/${tileName}`
+  const s3Key = `caribbean_tiles/${tileFilename}`
   const localCandidates = [
     process.env.TERRAIN_RASTER_PATH,
-    path.join(process.cwd(), 'data', 'caribbean_tiles', tileName),
-    path.join(process.cwd(), 'public', 'caribbean_tiles', tileName),
+    path.join(process.cwd(), 'data', 'caribbean_tiles', tileFilename),
+    path.join(process.cwd(), 'public', 'caribbean_tiles', tileFilename),
   ].filter(Boolean) as string[]
 
   for (const localPath of localCandidates) {
@@ -179,13 +178,13 @@ export const fetchSubGridElevations = createServerFn({ method: 'POST' })
     const centerLng = (west + east) / 2
     const centerLat = (south + north) / 2
 
-    const tileName = copernicusTileName(centerLng, centerLat)
-    const raster = await loadTerrainRaster(tileName)
+    const tileFilename = getTileFilename(centerLng, centerLat)
+    const raster = await loadTerrainRaster(tileFilename)
 
     if (!raster) {
       return {
         success: false,
-        error: `Terrain tile not found: ${tileName}`,
+        error: `Terrain tile not found: ${tileFilename}`,
         elevations: [],
       }
     }
@@ -202,9 +201,7 @@ export const fetchSubGridElevations = createServerFn({ method: 'POST' })
 
     try {
       const samples = await raster.dataset.readRasters({
-        bbox: rasterBbox,
         interleave: true,
-        fillValue: raster.nodata ?? -9999,
       })
 
       const width = raster.image.getWidth()

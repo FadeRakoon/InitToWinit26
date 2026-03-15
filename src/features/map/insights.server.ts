@@ -13,17 +13,24 @@ import {
   buildFallbackInsight,
   buildMetrics,
   buildRiskProfile,
+  estimateBoundsAreaSqKm,
   formatHistoricalAnalog,
   round,
 } from './insightMath'
 import { resolveOpenRouterModel } from './openrouter.server'
-import type { HistoricalAnalog, RegionInsightInput, RegionInsightResponse } from './types'
+import type {
+  AIInsight,
+  HistoricalAnalog,
+  RegionInsightInput,
+  RegionInsightResponse,
+} from './types'
 
 export async function calculateRegionInsights(
   input: RegionInsightInput,
 ): Promise<RegionInsightResponse> {
   const confidenceNotes: string[] = []
   const analysisBounds = resolveAnalysisBounds(input)
+  const analysisAreaSqKm = estimateBoundsAreaSqKm(analysisBounds)
 
   const [terrainResult, nearestSurge, stormRows, populationData] =
     await Promise.all([
@@ -76,6 +83,7 @@ export async function calculateRegionInsights(
     storms: stormAggregate,
     populationDensityPerSqKm: populationData?.density,
     estimatedPopulation: populationData?.count,
+    analysisAreaSqKm,
   })
 
   const riskProfile = buildRiskProfile({
@@ -84,6 +92,7 @@ export async function calculateRegionInsights(
     storms: stormAggregate,
     populationDensityPerSqKm: populationData?.density,
     estimatedPopulation: populationData?.count,
+    analysisAreaSqKm,
     confidenceNotes,
   })
 
@@ -125,6 +134,7 @@ async function generateHydrologicalInsight(input: {
 
   try {
     const facts = buildPromptFacts(input)
+    const evidenceSentence = buildEvidenceSentence(input)
 
     const { output } = await generateText({
       model,
@@ -140,6 +150,8 @@ async function generateHydrologicalInsight(input: {
         'Use only the provided facts.',
         'Do not invent numbers, events, telemetry, or certainty.',
         'Keep wording plain, compact, and concrete.',
+        'Do not claim severity that conflicts with the stated risk band and score.',
+        'If data appears weak, clearly state uncertainty instead of over-interpreting.',
         'If confidence is not high, the caution field must mention uncertainty.',
       ].join(' '),
       prompt: [
@@ -147,6 +159,12 @@ async function generateHydrologicalInsight(input: {
         `Risk band: ${input.riskProfile.band}`,
         `Risk score: ${input.riskProfile.score}/100`,
         `Confidence: ${input.riskProfile.confidence}`,
+        `Required evidence anchor sentence: ${evidenceSentence}`,
+        'Writing rules:',
+        '- Headline should be one sentence and include the risk band.',
+        '- Explanation should be 2-3 short sentences that connect hazard signal to terrain/exposure context.',
+        '- Include at least one concrete metric value.',
+        '- Avoid emotional or absolute wording.',
         'Facts:',
         ...facts.map((fact) => `- ${fact}`),
       ].join('\n'),
@@ -157,10 +175,88 @@ async function generateHydrologicalInsight(input: {
       }),
     })
 
-    return output
+    return enforceLogicalInsight(output, input)
   } catch {
     return fallback
   }
+}
+
+function enforceLogicalInsight(
+  candidate: AIInsight,
+  input: {
+    label: string
+    riskProfile: RegionInsightResponse['riskProfile']
+    metrics: RegionInsightResponse['metrics']
+    confidenceNotes: string[]
+  },
+): AIInsight {
+  const expectedBand = input.riskProfile.band.toLowerCase()
+  const normalizedHeadline = candidate.headline.toLowerCase().includes(expectedBand)
+    ? candidate.headline
+    : `${input.label} is currently assessed as ${expectedBand} flood risk.`
+
+  const evidenceSentence = buildEvidenceSentence(input)
+  const hasNumericEvidence = /\d/.test(candidate.explanation)
+  const normalizedExplanation = hasNumericEvidence
+    ? candidate.explanation
+    : `${candidate.explanation.trim()} ${evidenceSentence}`.trim()
+
+  const normalizedCaution =
+    input.riskProfile.confidence === 'High'
+      ? candidate.caution
+      : candidate.caution ??
+        `Confidence is ${input.riskProfile.confidence.toLowerCase()} because parts of terrain, surge, storm, or population coverage are limited.`
+
+  return {
+    headline: truncate(normalizedHeadline, 160),
+    explanation: truncate(normalizedExplanation, 320),
+    caution: normalizedCaution ? truncate(normalizedCaution, 220) : undefined,
+  }
+}
+
+function buildEvidenceSentence(input: {
+  riskProfile: RegionInsightResponse['riskProfile']
+  metrics: RegionInsightResponse['metrics']
+}) {
+  const evidenceParts: string[] = []
+
+  if (input.metrics.elevationMeanM !== undefined) {
+    evidenceParts.push(`mean elevation is ${input.metrics.elevationMeanM.toFixed(1)} m`)
+  }
+
+  if (input.metrics.surgeRp100M !== undefined) {
+    evidenceParts.push(`100-year surge estimate is ${input.metrics.surgeRp100M.toFixed(2)} m`)
+  }
+
+  if (input.metrics.feasibleSlopeAngleDeg !== undefined) {
+    evidenceParts.push(
+      `feasible slope angle is ${input.metrics.feasibleSlopeAngleDeg.toFixed(1)} degrees`,
+    )
+  }
+
+  if (input.metrics.nearbyStormCount !== undefined) {
+    evidenceParts.push(`nearby storm count is ${input.metrics.nearbyStormCount}`)
+  }
+
+  if (input.metrics.estimatedPopulation !== undefined) {
+    evidenceParts.push(
+      `estimated exposed population is ${input.metrics.estimatedPopulation.toLocaleString()}`,
+    )
+  }
+
+  if (evidenceParts.length === 0) {
+    return `Risk score is ${input.riskProfile.score}/100 with ${input.riskProfile.confidence.toLowerCase()} confidence from the available datasets.`
+  }
+
+  return `Key evidence: ${evidenceParts.slice(0, 3).join('; ')}.`
+}
+
+function truncate(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
 function buildPromptFacts(input: {
@@ -180,6 +276,12 @@ function buildPromptFacts(input: {
   if (input.metrics.reliefM !== undefined) {
     facts.push(
       `Local relief inside the analysis window is ${input.metrics.reliefM.toFixed(1)} m.`,
+    )
+  }
+
+  if (input.metrics.feasibleSlopeAngleDeg !== undefined) {
+    facts.push(
+      `Estimated feasible terrain slope is ${input.metrics.feasibleSlopeAngleDeg.toFixed(1)} degrees.`,
     )
   }
 
