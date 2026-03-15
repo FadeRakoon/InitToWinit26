@@ -51,6 +51,7 @@ export interface RiskProfileInput {
   storms?: StormAggregate
   populationDensityPerSqKm?: number
   estimatedPopulation?: number
+  analysisAreaSqKm?: number
   confidenceNotes: string[]
 }
 
@@ -129,16 +130,25 @@ export function buildMetrics(input: {
   storms?: StormAggregate
   populationDensityPerSqKm?: number
   estimatedPopulation?: number
+  analysisAreaSqKm?: number
 }): RegionInsightMetrics {
   const terrain = input.terrain
   const surge = input.nearestSurge
   const storms = input.storms
+  const feasibleSlopeAngleDeg =
+    terrain && input.analysisAreaSqKm !== undefined
+      ? estimateFeasibleSlopeAngleDeg(
+          terrain.stats.max - terrain.stats.min,
+          input.analysisAreaSqKm,
+        )
+      : undefined
 
   return {
     elevationMinM: terrain ? round(terrain.stats.min) : undefined,
     elevationMeanM: terrain ? round(terrain.stats.mean) : undefined,
     elevationMaxM: terrain ? round(terrain.stats.max) : undefined,
     reliefM: terrain ? round(terrain.stats.max - terrain.stats.min) : undefined,
+    feasibleSlopeAngleDeg,
     landCoveragePct: terrain ? round(terrain.coverage.landCoveragePct) : undefined,
     nearestSurgeStationKm: surge ? round(surge.distanceKm) : undefined,
     surgeRp1M: surge ? round(surge.rp1Bestfit, 2) : undefined,
@@ -165,9 +175,15 @@ export function buildRiskProfile({
   storms,
   populationDensityPerSqKm,
   estimatedPopulation,
+  analysisAreaSqKm,
   confidenceNotes,
 }: RiskProfileInput): RiskProfile {
   const terrainDriver = buildTerrainContribution(terrain)
+  const landslideDriver = buildLandslideContribution({
+    terrain,
+    storms,
+    analysisAreaSqKm,
+  })
   const surgeDriver = buildSurgeContribution(nearestSurge, terrain)
   const stormDriver = buildStormContribution(storms)
   const exposureDriver = buildExposureContribution({
@@ -177,6 +193,7 @@ export function buildRiskProfile({
 
   const drivers = [
     terrainDriver,
+    landslideDriver,
     surgeDriver,
     stormDriver,
     exposureDriver,
@@ -226,7 +243,11 @@ export function buildFallbackInsight(input: {
     metrics.surgeRp100M !== undefined && metrics.elevationMeanM !== undefined
       ? metrics.surgeRp100M > metrics.elevationMeanM
         ? `Estimated severe-storm water levels can exceed the local average ground height, which raises overtopping risk.`
-        : `Severe-storm water levels remain below average ground height, which helps moderate direct inundation risk.`
+        : metrics.elevationMeanM - metrics.surgeRp100M <= 1
+          ? `Estimated severe-storm water levels sit close to average ground height, so low pockets can still flood during stronger events.`
+          : riskProfile.band === 'High' || riskProfile.band === 'Severe'
+            ? `Estimated severe-storm water levels remain below average ground height, but other signals still keep overall risk elevated.`
+            : `Estimated severe-storm water levels remain below average ground height, which helps limit direct inundation pressure.`
       : ''
 
   const exposureFocus =
@@ -234,14 +255,32 @@ export function buildFallbackInsight(input: {
       ? `Around ${metrics.estimatedPopulation.toLocaleString()} people are estimated inside the analysis window, so exposure rises if flooding does occur.`
       : ''
 
+  const landslideFocus =
+    metrics.feasibleSlopeAngleDeg !== undefined
+      ? metrics.feasibleSlopeAngleDeg >= 20
+        ? `A feasible local slope of about ${metrics.feasibleSlopeAngleDeg.toFixed(1)} degrees indicates meaningful slope-failure potential if soils become saturated.`
+        : metrics.feasibleSlopeAngleDeg >= 12
+          ? `A feasible local slope of about ${metrics.feasibleSlopeAngleDeg.toFixed(1)} degrees indicates moderate landslide sensitivity during prolonged heavy rain.`
+          : `A feasible local slope of about ${metrics.feasibleSlopeAngleDeg.toFixed(1)} degrees suggests lower landslide pressure than steeper nearby terrain.`
+      : ''
+
   return {
-    headline: `${label} is currently assessed as ${riskProfile.band.toLowerCase()} flood risk.`,
-    explanation: [driver, terrainFocus, surgeFocus, exposureFocus]
-      .filter(Boolean)
-      .join(' '),
+    headline: truncateText(
+      `${label} is currently assessed as ${riskProfile.band.toLowerCase()} flood risk.`,
+      160,
+    ),
+    explanation: truncateText(
+      [driver, terrainFocus, landslideFocus, surgeFocus, exposureFocus]
+        .filter(Boolean)
+        .join(' '),
+      320,
+    ),
     caution:
       riskProfile.confidence !== 'High'
-        ? `Confidence is ${riskProfile.confidence.toLowerCase()} because some supporting terrain, surge, or population data is sparse or unavailable.`
+        ? truncateText(
+            `Confidence is ${riskProfile.confidence.toLowerCase()} because some supporting terrain, surge, or population data is sparse or unavailable.`,
+            220,
+          )
         : undefined,
   }
 }
@@ -322,10 +361,15 @@ function buildSurgeContribution(
       : 0
   const weight = clamp(baseScore + proximityScore + overtoppingScore, 0, 25)
 
+  const isDistantStation = nearestSurge.distanceKm > 180
+  const isLowSurgeSignal = nearestSurge.rp100Bestfit < 0.8
+
   return {
     label:
       overtoppingScore > 0 && terrain
         ? `Estimated 100-year surge of ${round(nearestSurge.rp100Bestfit, 2)} m can exceed the cell's average ground height of ${round(terrain.stats.mean)} m.`
+        : isDistantStation || isLowSurgeSignal
+          ? `Estimated 100-year surge of ${round(nearestSurge.rp100Bestfit, 2)} m suggests limited direct coastal pressure at this point, especially with the nearest station ${round(nearestSurge.distanceKm)} km away.`
         : `Estimated 100-year surge of ${round(nearestSurge.rp100Bestfit, 2)} m still adds coastal flood pressure near this location.`,
     weight,
   }
@@ -347,13 +391,25 @@ function buildStormContribution(
     storms.mostRecentStormYear !== undefined
       ? clamp(((storms.mostRecentStormYear - 1980) / 45) * 2, 0, 2)
       : 0
+  const totalWeight = clamp(countScore + windScore + recencyScore, 0, 20)
+
+  const stormRecencyLabel =
+    storms.mostRecentStormYear !== undefined
+      ? ` Most recent nearby year in the record is ${storms.mostRecentStormYear}.`
+      : ''
+
+  const label =
+    totalWeight >= 12
+      ? storms.strongestWindKt !== undefined
+        ? `${storms.distinctStormCount} historical storms passed nearby, including intense winds up to ${storms.strongestWindKt} kt.${stormRecencyLabel}`
+        : `${storms.distinctStormCount} historical storms passed nearby, indicating repeated storm exposure.${stormRecencyLabel}`
+      : storms.strongestWindKt !== undefined && storms.strongestWindKt < 70
+        ? `${storms.distinctStormCount} historical storms passed nearby, but peak recorded winds were lower at ${storms.strongestWindKt} kt.${stormRecencyLabel}`
+        : `${storms.distinctStormCount} historical storms passed nearby.${stormRecencyLabel}`
 
   return {
-    label:
-      storms.strongestWindKt !== undefined
-        ? `${storms.distinctStormCount} historical storms passed nearby, with peak winds up to ${storms.strongestWindKt} kt.`
-        : `${storms.distinctStormCount} historical storms passed nearby.`,
-    weight: clamp(countScore + windScore + recencyScore, 0, 20),
+    label,
+    weight: totalWeight,
   }
 }
 
@@ -384,9 +440,52 @@ function buildExposureContribution(input: {
     density !== undefined ? `${round(density)} people per sq km` : null,
   ].filter(Boolean)
 
+  const totalWeight = clamp(densityScore + populationScore, 0, 10)
+
+  const label =
+    totalWeight >= 6
+      ? `Local exposure is elevated because the analysis window contains ${details.join(' and ')}.`
+      : totalWeight >= 2
+        ? `Local exposure is moderate, with the analysis window containing ${details.join(' and ')}.`
+        : `Local exposure appears limited, with the analysis window containing ${details.join(' and ')}.`
+
   return {
-    label: `Local exposure is higher because the analysis window contains ${details.join(' and ')}.`,
-    weight: clamp(densityScore + populationScore, 0, 10),
+    label,
+    weight: totalWeight,
+  }
+}
+
+function buildLandslideContribution(input: {
+  terrain?: TerrainSummaryRecord
+  storms?: StormAggregate
+  analysisAreaSqKm?: number
+}): DriverContribution {
+  const terrain = input.terrain
+  if (!terrain || input.analysisAreaSqKm === undefined) {
+    return { label: 'Landslide signal is unavailable without terrain slope context.', weight: 0 }
+  }
+
+  const relief = Math.max(terrain.stats.max - terrain.stats.min, 0)
+  const slopeAngleDeg = estimateFeasibleSlopeAngleDeg(relief, input.analysisAreaSqKm)
+  const slopeScore = clamp(((slopeAngleDeg - 6) / 22) * 10, 0, 10)
+  const reliefScore = clamp(((relief - 35) / 160) * 3, 0, 3)
+  const stormTriggerScore =
+    input.storms && input.storms.distinctStormCount > 0
+      ? clamp((input.storms.distinctStormCount / 10) * 1.5, 0, 1.5)
+      : 0
+
+  const totalWeight = clamp(slopeScore + reliefScore + stormTriggerScore, 0, 15)
+
+  const label =
+    slopeAngleDeg >= 22
+      ? `Estimated feasible slope near ${round(slopeAngleDeg, 1)} degrees suggests elevated landslide potential, especially under saturated ground conditions.`
+      : slopeAngleDeg >= 14
+        ? `Estimated feasible slope near ${round(slopeAngleDeg, 1)} degrees indicates moderate landslide susceptibility during heavy rain periods.`
+        : `Estimated feasible slope near ${round(slopeAngleDeg, 1)} degrees indicates lower landslide susceptibility than steeper terrain.`
+
+  return {
+    label,
+    weight: totalWeight,
   }
 }
 
@@ -408,6 +507,21 @@ function describeTerrainContribution(input: {
     default:
       return `Mid-slope terrain around ${meanLabel} m with ${reliefLabel} m of relief gives this cell moderate drainage support.`
   }
+}
+
+function estimateFeasibleSlopeAngleDeg(reliefM: number, areaSqKm: number) {
+  const normalizedAreaSqKm = Math.max(areaSqKm, 0.05)
+  const characteristicRunM = Math.max(Math.sqrt(normalizedAreaSqKm) * 1000 * 0.4, 200)
+  const angleRad = Math.atan2(Math.max(reliefM, 0), characteristicRunM)
+  return round((angleRad * 180) / Math.PI, 1)
+}
+
+function truncateText(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
 function clamp(value: number, min: number, max: number) {
