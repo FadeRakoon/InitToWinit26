@@ -8,6 +8,7 @@ import { fromArrayBuffer, fromFile } from 'geotiff'
 import { z } from 'zod'
 import { CARIBBEAN_COUNTRY_BOUNDARIES } from './caribbeanCountryBoundaries'
 import { GRID_LAT_STEP, GRID_LNG_STEP } from './config'
+import { pointInPolygon } from './geometry'
 import { aiInsightSchema, regionInsightResponseSchema } from './contracts'
 import {
   buildFallbackInsight,
@@ -780,27 +781,6 @@ function resolveCountryByPoint(center: [number, number]) {
   }
 
   return undefined
-}
-
-function pointInPolygon(
-  [lng, lat]: [number, number],
-  polygon: Array<[number, number]>,
-) {
-  let inside = false
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [xi, yi] = polygon[i]
-    const [xj, yj] = polygon[j]
-    const intersects =
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi || Number.EPSILON) + xi
-
-    if (intersects) {
-      inside = !inside
-    }
-  }
-
-  return inside
 }
 
 function resolveAnalysisBounds(input: RegionInsightInput): BoundsTuple {

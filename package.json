@@ -39,6 +39,7 @@
     "maplibre-gl": "^5.20.1",
     "motion": "^12.36.0",
     "nitro": "3.0.260311-beta",
+    "nitropack": "^2.13.1",
     "pg": "^8.20.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
