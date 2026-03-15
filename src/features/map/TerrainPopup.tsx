@@ -117,8 +117,11 @@ export function TerrainPopup({
     })
 
     map.on('sourcedata', (e) => {
-      if (e.isSourceLoaded && e.sourceId === 'terrain-dem') {
-        console.log('[terrain] Terrain source loaded')
+      if (
+        e.isSourceLoaded &&
+        (e.sourceId === 'terrain-source' || e.sourceId === 'hillshade-source')
+      ) {
+        console.log('[terrain] Source loaded:', e.sourceId)
       }
     })
 
