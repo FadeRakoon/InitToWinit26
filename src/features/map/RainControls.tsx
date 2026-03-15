@@ -1,0 +1,95 @@
+import { Droplets } from 'lucide-react'
+import { STORM_CATEGORIES, getCategory } from './rain-sim'
+
+const MAX_MM = 178 // Hurricane Ivan / Cat 5 record
+
+interface Props {
+  mmPerHr:     number
+  onChange:    (mmPerHr: number) => void
+  isLoading:   boolean   // true while tile elevations are being fetched
+  hasElevation: boolean  // false until elevations loaded for this cell
+}
+
+export function RainControls({ mmPerHr, onChange, isLoading, hasElevation }: Props) {
+  const category = getCategory(mmPerHr)
+
+  if (!hasElevation) {
+    return (
+      <div className="rain-controls rain-controls--idle">
+        <Droplets size={16} aria-hidden="true" />
+        <span>Select a grid cell to enable rainfall simulation</span>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="rain-controls rain-controls--idle">
+        <Droplets size={16} aria-hidden="true" className="is-spinning" />
+        <span>Loading elevation data…</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rain-controls">
+      {/* Header row */}
+      <div className="rain-controls__header">
+        <Droplets size={16} aria-hidden="true" />
+        <span className="rain-controls__title">Rainfall Simulation</span>
+        <span
+          className="rain-controls__badge"
+          style={{ color: category.color }}
+        >
+          {category.label}
+          {mmPerHr > 0 && (
+            <em> · {mmPerHr} mm/hr</em>
+          )}
+        </span>
+      </div>
+
+      {/* Slider */}
+      <div className="rain-controls__track-wrap">
+        <input
+          type="range"
+          min={0}
+          max={MAX_MM}
+          step={1}
+          value={mmPerHr}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="rain-controls__slider"
+          aria-label="Rainfall intensity"
+        />
+
+        {/* Notch markers */}
+        <div className="rain-controls__notches" aria-hidden="true">
+          {STORM_CATEGORIES.map((cat) => (
+            <button
+              key={cat.mmPerHr}
+              type="button"
+              className="rain-controls__notch"
+              style={{ left: `${(cat.mmPerHr / MAX_MM) * 100}%`, color: cat.color }}
+              onClick={() => onChange(cat.mmPerHr)}
+              title={`${cat.label}${cat.mmPerHr > 0 ? ` (${cat.mmPerHr} mm/hr)` : ''}`}
+            >
+              <span className="rain-controls__notch-tick" />
+              <span className="rain-controls__notch-label">{cat.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Depth legend */}
+      {mmPerHr > 0 && (
+        <div className="rain-controls__legend" aria-label="Water depth legend">
+          <span>Water depth</span>
+          <div className="rain-controls__legend-bar">
+            <span>0 m</span>
+            <div className="rain-controls__legend-gradient" />
+            <span>≥ 0.5 m</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
