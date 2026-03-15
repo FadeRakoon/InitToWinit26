@@ -11,8 +11,12 @@ export interface SearchResult {
 
 export interface GridCellProperties {
   cellId: string
+  cellKey: string
+  cellLabel: string
   centerLng: number
   centerLat: number
+  latIndex: number
+  lngIndex: number
 }
 
 export type GridCellFeature = Feature<Polygon, GridCellProperties> & {

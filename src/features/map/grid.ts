@@ -1,3 +1,4 @@
+import { isPointOnCaribbeanLand } from './geometry'
 import type { GridCellFeature, GridFeatureCollection, LngLatTuple } from './types'
 import {
   GRID_COLUMNS,
@@ -14,7 +15,17 @@ interface GridOptions {
   lngStep?: number
 }
 
-const COLUMN_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+function getColumnLabel(index: number): string {
+  let label = ''
+  let current = index
+
+  do {
+    label = String.fromCharCode(65 + (current % 26)) + label
+    current = Math.floor(current / 26) - 1
+  } while (current >= 0)
+
+  return label
+}
 
 export function createGridFeatureCollection({
   center,
@@ -36,14 +47,25 @@ export function createGridFeatureCollection({
       const west = startLng + col * lngStep
       const east = startLng + (col + 1) * lngStep
       const id = row * cols + col
+      const cellKey = `${getColumnLabel(col)}${row + 1}`
+      const centerLng = west + lngStep / 2
+      const centerLat = south + latStep / 2
+
+      if (!isPointOnCaribbeanLand([centerLng, centerLat])) {
+        continue
+      }
 
       features.push({
         type: 'Feature',
         id,
         properties: {
-          cellId: `${COLUMN_LABELS[col % COLUMN_LABELS.length]}${row + 1}`,
-          centerLng: west + lngStep / 2,
-          centerLat: south + latStep / 2,
+          cellId: cellKey,
+          cellKey,
+          cellLabel: cellKey,
+          centerLng,
+          centerLat,
+          latIndex: row,
+          lngIndex: col,
         },
         geometry: {
           type: 'Polygon',
