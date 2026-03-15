@@ -47,6 +47,11 @@ export function TerrainPopup({
     })
 
     map.on('load', () => {
+      console.log('[terrain] Map loaded, adding terrain source')
+      console.log('[terrain] Tile URL:', TERRAIN_TILE_URL)
+      console.log('[terrain] Center:', center)
+      console.log('[terrain] Bounds:', bounds)
+
       try {
         map.addSource(TERRAIN_SOURCE_ID, {
           type: 'raster-dem',
@@ -57,10 +62,14 @@ export function TerrainPopup({
           maxzoom: TERRAIN_MAX_ZOOM,
         })
 
+        console.log('[terrain] Source added')
+
         map.setTerrain({
           source: TERRAIN_SOURCE_ID,
           exaggeration: TERRAIN_EXAGGERATION,
         })
+
+        console.log('[terrain] Terrain set')
 
         map.addLayer({
           id: 'terrain-hillshade',
@@ -73,6 +82,8 @@ export function TerrainPopup({
             'hillshade-accent-color': '#38bdf8',
           },
         })
+
+        console.log('[terrain] Hillshade layer added')
 
         const [sw, ne] = bounds
         map.fitBounds(
@@ -90,14 +101,22 @@ export function TerrainPopup({
 
         setIsLoading(false)
       } catch (err) {
+        console.error('[terrain] Error setting up terrain:', err)
         setError('Failed to load terrain data')
         setIsLoading(false)
       }
     })
 
-    map.on('error', () => {
+    map.on('error', (e) => {
+      console.error('[terrain] Map error:', e.error)
       setError('Failed to initialize terrain view')
       setIsLoading(false)
+    })
+
+    map.on('sourcedata', (e) => {
+      if (e.isSourceLoaded) {
+        console.log('[terrain] Source loaded:', e.sourceId)
+      }
     })
 
     mapRef.current = map
