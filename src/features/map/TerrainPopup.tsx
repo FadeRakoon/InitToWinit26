@@ -2,10 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import {
+  MAP_STYLE_URL,
+  TERRAIN_BASE_SHIFT,
+  TERRAIN_BLUE_FACTOR,
   DEFAULT_MAP_ZOOM,
   TERRAIN_EXAGGERATION,
+  TERRAIN_GREEN_FACTOR,
+  TERRAIN_HILLSHADE_SOURCE_ID,
   TERRAIN_MAX_ZOOM,
   TERRAIN_MIN_ZOOM,
+  TERRAIN_RED_FACTOR,
+  TERRAIN_SOURCE_ID,
   TERRAIN_TILE_URL,
 } from './config'
 import type { BoundsTuple, LngLatTuple } from './types'
@@ -35,98 +42,181 @@ export function TerrainPopup({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          'terrain-source': {
-            type: 'raster-dem',
-            tiles: [TERRAIN_TILE_URL],
-            tileSize: 256,
-            encoding: 'mapbox',
-            minzoom: TERRAIN_MIN_ZOOM,
-            maxzoom: TERRAIN_MAX_ZOOM,
-          },
-          'hillshade-source': {
-            type: 'raster-dem',
-            tiles: [TERRAIN_TILE_URL],
-            tileSize: 256,
-            encoding: 'mapbox',
-            minzoom: TERRAIN_MIN_ZOOM,
-            maxzoom: TERRAIN_MAX_ZOOM,
-          },
-        },
-        layers: [
-          {
-            id: 'background',
-            type: 'background',
-            paint: {
-              'background-color': '#0a0a1a',
-            },
-          },
-          {
-            id: 'terrain-hillshade',
-            type: 'hillshade',
-            source: 'hillshade-source',
-            paint: {
-              'hillshade-exaggeration': 0.8,
-              'hillshade-shadow-color': '#1a1a2e',
-              'hillshade-highlight-color': '#60d4ff',
-              'hillshade-accent-color': '#38bdf8',
-            },
-          },
-        ],
-      },
+      style: MAP_STYLE_URL,
       center: center,
-      zoom: DEFAULT_MAP_ZOOM + 2,
-      pitch: 60,
-      bearing: -30,
+      zoom: DEFAULT_MAP_ZOOM,
+      pitch: 45,
+      bearing: -20,
+      maxZoom: TERRAIN_MAX_ZOOM,
+      minZoom: TERRAIN_MIN_ZOOM,
     })
 
     map.on('load', () => {
-      console.log('[terrain] Map loaded, setting terrain')
+      const [sw, ne] = bounds
+      const lngPadding = Math.max((ne[0] - sw[0]) * 3, 0.035)
+      const latPadding = Math.max((ne[1] - sw[1]) * 3, 0.03)
+      const expandedBounds: BoundsTuple = [
+        [center[0] - lngPadding, center[1] - latPadding],
+        [center[0] + lngPadding, center[1] + latPadding],
+      ]
 
-      const source = map.getSource('terrain-source')
-      console.log('[terrain] Source:', source)
+      map.addSource(TERRAIN_SOURCE_ID, {
+        type: 'raster-dem',
+        tiles: [TERRAIN_TILE_URL],
+        tileSize: 256,
+        encoding: 'custom',
+        redFactor: TERRAIN_RED_FACTOR,
+        greenFactor: TERRAIN_GREEN_FACTOR,
+        blueFactor: TERRAIN_BLUE_FACTOR,
+        baseShift: TERRAIN_BASE_SHIFT,
+        minzoom: TERRAIN_MIN_ZOOM,
+        maxzoom: TERRAIN_MAX_ZOOM,
+      })
+
+      map.addSource(TERRAIN_HILLSHADE_SOURCE_ID, {
+        type: 'raster-dem',
+        tiles: [TERRAIN_TILE_URL],
+        tileSize: 256,
+        encoding: 'custom',
+        redFactor: TERRAIN_RED_FACTOR,
+        greenFactor: TERRAIN_GREEN_FACTOR,
+        blueFactor: TERRAIN_BLUE_FACTOR,
+        baseShift: TERRAIN_BASE_SHIFT,
+        minzoom: TERRAIN_MIN_ZOOM,
+        maxzoom: TERRAIN_MAX_ZOOM,
+      })
+
+      map.addSource('terrain-focus', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                  [sw[0], sw[1]],
+                  [ne[0], sw[1]],
+                  [ne[0], ne[1]],
+                  [sw[0], ne[1]],
+                  [sw[0], sw[1]],
+                ]],
+              },
+            },
+            {
+              type: 'Feature',
+              properties: {
+                cellId,
+              },
+              geometry: {
+                type: 'Point',
+                coordinates: center,
+              },
+            },
+          ],
+        },
+      })
 
       map.setTerrain({
-        source: 'terrain-source',
+        source: TERRAIN_SOURCE_ID,
         exaggeration: TERRAIN_EXAGGERATION,
       })
 
-      console.log('[terrain] Terrain set')
+      map.addLayer({
+        id: 'terrain-hillshade',
+        type: 'hillshade',
+        source: TERRAIN_HILLSHADE_SOURCE_ID,
+        paint: {
+          'hillshade-exaggeration': 0.8,
+          'hillshade-shadow-color': '#1a1a2e',
+          'hillshade-highlight-color': '#60d4ff',
+          'hillshade-accent-color': '#38bdf8',
+        },
+      })
 
-      const [sw, ne] = bounds
+      map.addLayer({
+        id: 'terrain-focus-fill',
+        type: 'fill',
+        source: 'terrain-focus',
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: {
+          'fill-color': '#38bdf8',
+          'fill-opacity': 0.14,
+        },
+      })
+
+      map.addLayer({
+        id: 'terrain-focus-outline',
+        type: 'line',
+        source: 'terrain-focus',
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: {
+          'line-color': '#b7f0ff',
+          'line-width': 3,
+          'line-opacity': 0.95,
+        },
+      })
+
+      map.addLayer({
+        id: 'terrain-focus-point',
+        type: 'circle',
+        source: 'terrain-focus',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 7,
+          'circle-color': '#e0f2fe',
+          'circle-stroke-color': '#38bdf8',
+          'circle-stroke-width': 3,
+        },
+      })
+
+      map.addLayer({
+        id: 'terrain-focus-label',
+        type: 'symbol',
+        source: 'terrain-focus',
+        filter: ['==', ['geometry-type'], 'Point'],
+        layout: {
+          'text-field': ['get', 'cellId'],
+          'text-size': 13,
+          'text-letter-spacing': 0.08,
+          'text-font': ['Open Sans Semibold'],
+          'text-offset': [0, -1.5],
+          'text-anchor': 'bottom',
+        },
+        paint: {
+          'text-color': '#f8fdff',
+          'text-halo-color': 'rgba(7, 17, 27, 0.92)',
+          'text-halo-width': 1.5,
+        },
+      })
+
       map.fitBounds(
         [
-          [sw[0], sw[1]],
-          [ne[0], ne[1]],
+          [expandedBounds[0][0], expandedBounds[0][1]],
+          [expandedBounds[1][0], expandedBounds[1][1]],
         ],
         {
-          padding: 50,
+          padding: 60,
           duration: 1000,
-          pitch: 60,
-          bearing: -30,
+          pitch: 45,
+          bearing: -20,
+          maxZoom: DEFAULT_MAP_ZOOM,
         },
       )
 
-      setIsLoading(false)
-    })
+      requestAnimationFrame(() => {
+        map.resize()
+      })
 
-    map.on('terrain', (e) => {
-      console.log('[terrain] Terrain event:', e)
-    })
-
-    map.on('sourcedata', (e) => {
-      if (
-        e.isSourceLoaded &&
-        (e.sourceId === 'terrain-source' || e.sourceId === 'hillshade-source')
-      ) {
-        console.log('[terrain] Source loaded:', e.sourceId)
-      }
+      window.setTimeout(() => {
+        map.resize()
+        setIsLoading(false)
+      }, 0)
     })
 
     map.on('error', (e) => {
-      console.error('[terrain] Map error:', e.error)
       setError('Failed to initialize terrain view')
       setIsLoading(false)
     })
@@ -161,6 +251,10 @@ export function TerrainPopup({
           </button>
         </div>
         <div className="terrain-popup__body">
+          <div className="terrain-popup__focus-badge">
+            <span className="terrain-popup__focus-label">Focused cell</span>
+            <strong>{cellId}</strong>
+          </div>
           {isLoading && (
             <div className="terrain-popup__loading">
               <div className="terrain-popup__spinner" />
