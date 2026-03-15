@@ -9,8 +9,6 @@ import {
   Search,
   Sparkles,
   X,
-  MessageSquare,
-  Send,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import maplibregl from 'maplibre-gl'
@@ -37,6 +35,7 @@ import { computeWaterDepths } from './rain-sim'
 import { fetchSubGridElevations } from './elevation'
 import { RainControls } from './RainControls'
 import './rain-controls.css'
+import { WinstonChat } from './WinstonChat'
 import type {
   BoundsTuple,
   GridCellFeature,
@@ -65,6 +64,7 @@ interface FocusTarget {
 
 interface TerrainView {
   cellId: string
+  label: string
   center: LngLatTuple
   bounds: BoundsTuple
 }
@@ -234,6 +234,7 @@ export default function MapPage() {
     ]
     setTerrainView({
       cellId: feature.properties.cellId,
+      label: feature.properties.cellLabel,
       center: [centerLng, centerLat],
       bounds,
     })
@@ -904,91 +905,24 @@ export default function MapPage() {
 
         {/* Winston AI UI */}
         {terrainView && (
-          <div className="absolute bottom-8 left-8 z-[60] flex flex-col items-center pointer-events-none">
-            <div className="flex flex-col items-center pointer-events-auto">
-              <AnimatePresence mode="popLayout" initial={false}>
-                {isAIChatOpen ? (
-                  <motion.div
-                    key="winston-chat-window"
-                    layoutId="winston-chat-box"
-                    transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
-                    className="w-[400px] h-[500px] max-h-[60vh] bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden mb-6"
-                  >
-                    {/* Chat Header */}
-                    <div className="flex items-center justify-between p-5 border-b border-white/10 bg-slate-800/50">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-blue-500/20 border border-blue-500/30 overflow-hidden flex items-center justify-center">
-                          <img src={winstonImg} alt="Winston" className="w-8 h-8 object-contain" />
-                        </div>
-                        <div>
-                          <h3 className="text-white font-bold text-lg leading-tight">Winston</h3>
-                          <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Region {terrainView.cellId}</p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => setIsAIChatOpen(false)} 
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      >
-                        <X size={20} />
-                      </button>
-                    </div>
-
-                    {/* Chat Messages Area */}
-                    <div className="flex-1 p-5 overflow-y-auto flex flex-col gap-4">
-                      <div className="bg-slate-800 border border-slate-700 p-4 rounded-2xl rounded-tl-none text-slate-200 text-sm leading-relaxed shadow-sm">
-                        Hi there! You selected <span className="text-blue-300 font-bold">Region {terrainView.cellId}</span>. 
-                        I'm Winston. What would you like to know about the hydrological patterns or terrain here?
-                      </div>
-                    </div>
-
-                    {/* Chat Input Area */}
-                    <div className="p-5 border-t border-white/10 bg-slate-800/30">
-                      <form className="flex items-center gap-3" onSubmit={(e) => e.preventDefault()}>
-                        <input 
-                          type="text" 
-                          placeholder="Ask Winston..." 
-                          className="flex-1 bg-slate-800/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500 transition-all"
-                        />
-                        <button type="submit" className="w-12 h-12 rounded-xl bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white transition-all shadow-lg active:scale-95">
-                          <Send size={20} />
-                        </button>
-                      </form>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div 
-                    key="winston-bubble"
-                    layoutId="winston-chat-box"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
-                    className="bg-slate-800/90 backdrop-blur-md border border-slate-600 p-5 rounded-3xl shadow-2xl text-white relative mb-6 cursor-pointer hover:scale-105"
-                    onClick={() => setIsAIChatOpen(true)}
-                  >
-                    <p className="font-bold text-xl text-blue-200 flex items-center gap-3 whitespace-nowrap">
-                      <MessageSquare size={22} className="text-blue-400" />
-                      Talk to me about it!
-                    </p>
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-5 bg-slate-800 border-b border-r border-slate-600 transform translate-y-1/2 rotate-45"></div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <motion.div 
-                className="w-48 h-48 relative cursor-pointer"
-                onClick={() => setIsAIChatOpen(!isAIChatOpen)}
-                whileHover={{ scale: 1.05 }}
-                transition={{ type: "spring", stiffness: 400, damping: 20 }}
-              >
-                <img 
-                  src={winstonImg} 
-                  alt="Winston the Weathervane" 
-                  className="w-full h-full object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.6)]" 
-                />
-              </motion.div>
-            </div>
-          </div>
+          <WinstonChat
+            imageSrc={winstonImg}
+            isOpen={isAIChatOpen}
+            onClose={() => setIsAIChatOpen(false)}
+            onToggleOpen={() => setIsAIChatOpen((open) => !open)}
+            region={{
+              kind: 'cell',
+              label: terrainView.label,
+              center: terrainView.center,
+              bounds: terrainView.bounds,
+              gridCellId: terrainView.cellId,
+            }}
+            sidebarInsight={
+              panelState.status === 'ready' && panelState.kind === 'cell'
+                ? panelState.insight
+                : undefined
+            }
+          />
         )}
       </section>
 

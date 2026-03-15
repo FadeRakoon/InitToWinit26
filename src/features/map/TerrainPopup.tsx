@@ -83,7 +83,6 @@ export function TerrainPopup({
           },
         ],
       },
-
       center: center,
       zoom: DEFAULT_MAP_ZOOM,
       pitch: 45,
