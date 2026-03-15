@@ -14,6 +14,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
+import { ChatWidget } from '@/components/ChatWidget'
 import maplibregl, {
   type GeoJSONSource,
   type MapGeoJSONFeature,
@@ -290,6 +291,8 @@ export default function MapPage() {
             ) : null}
           </div>
         </aside>
+
+        <ChatWidget />
       </section>
     </main>
   )

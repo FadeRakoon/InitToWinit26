@@ -12,7 +12,11 @@ const config = defineConfig({
     tsconfigPaths({ projects: ['./tsconfig.json'] }),
     tailwindcss(),
     tanstackStart(),
-    nitro(),
+    nitro({
+      routeRules: {
+        '/api/**': { cors: true },
+      },
+    }),
     viteReact(),
   ],
 })
