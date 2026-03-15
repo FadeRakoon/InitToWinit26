@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, CloudLightning } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
+import { Navbar } from './Navbar'
 
 const heroBackgroundImage =
   'linear-gradient(rgba(2, 8, 15, 0.7), rgba(8, 15, 26, 0.9)), url("https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=2072")'
@@ -7,47 +8,7 @@ const heroBackgroundImage =
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[var(--landing-bg-color)] text-[var(--landing-text-primary)]">
-      <nav className="fixed top-0 left-0 z-[100] flex h-[70px] w-full items-center justify-between border-b border-white/5 bg-[#080f1a] px-5 shadow-none sm:px-10">
-        <Link
-          to="/"
-          className="flex items-center gap-3 text-xl font-bold tracking-[-0.3px] no-underline transition-opacity hover:opacity-80"
-          style={{ color: '#ffffff' }}
-        >
-          <CloudLightning
-            aria-hidden="true"
-            className="h-[1.4rem] w-[1.4rem] text-[var(--landing-accent)]"
-          />
-          <span>Yaad Guard</span>
-        </Link>
-
-        <div className="flex items-center gap-2 sm:gap-6">
-          <Link
-            to="/"
-            className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-primary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 md:inline"
-          >
-            Home
-          </Link>
-          <a
-            href="#about"
-            className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
-          >
-            About
-          </a>
-          <a
-            href="#technology"
-            className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
-          >
-            Technology
-          </a>
-          <div className="ml-2 h-4 w-[1px] bg-white/10 hidden md:block" />
-          <Link
-            to="/map"
-            className="rounded-full border border-[rgba(56,189,248,0.3)] bg-[rgba(56,189,248,0.1)] px-5 py-2 text-[0.85rem] font-semibold tracking-[0.3px] text-[var(--landing-accent)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:border-[var(--landing-accent)] hover:bg-[var(--landing-accent)] hover:text-slate-950 hover:shadow-[0_0_20px_rgba(56,189,248,0.4)] active:scale-95"
-          >
-            Open Map
-          </Link>
-        </div>
-      </nav>
+      <Navbar />
 
       <main className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-5 pt-[70px]">
         <div
