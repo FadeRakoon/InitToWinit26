@@ -42,6 +42,47 @@ export function TerrainPopup({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
+      style: {
+        version: 8,
+        sources: {
+          'terrain-source': {
+            type: 'raster-dem',
+            tiles: [TERRAIN_TILE_URL],
+            tileSize: 256,
+            encoding: 'mapbox',
+            minzoom: TERRAIN_MIN_ZOOM,
+            maxzoom: TERRAIN_MAX_ZOOM,
+          },
+          'hillshade-source': {
+            type: 'raster-dem',
+            tiles: [TERRAIN_TILE_URL],
+            tileSize: 256,
+            encoding: 'mapbox',
+            minzoom: TERRAIN_MIN_ZOOM,
+            maxzoom: TERRAIN_MAX_ZOOM,
+          },
+        },
+        layers: [
+          {
+            id: 'background',
+            type: 'background',
+            paint: {
+              'background-color': '#0a0a1a',
+            },
+          },
+          {
+            id: 'terrain-hillshade',
+            type: 'hillshade',
+            source: 'hillshade-source',
+            paint: {
+              'hillshade-exaggeration': 0.5,
+              'hillshade-shadow-color': '#1a1a2e',
+              'hillshade-highlight-color': '#608aff',
+              'hillshade-accent-color': '#38f872',
+            },
+          },
+        ],
+      },
       style: MAP_STYLE_URL,
       center: center,
       zoom: DEFAULT_MAP_ZOOM,
