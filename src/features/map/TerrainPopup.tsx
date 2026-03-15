@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   DEFAULT_MAP_ZOOM,
   MAP_STYLE_URL,
