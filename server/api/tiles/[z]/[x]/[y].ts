@@ -1,14 +1,8 @@
-import {
-  defineEventHandler,
-  getRouterParam,
-  createError,
-  sendRedirect,
-} from 'h3'
+import { defineEventHandler, getRouterParam, createError, setHeader } from 'h3'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const S3_BUCKET = 'organized-satchel-dyu5zvi'
-const AWS_REGION = process.env.AWS_REGION || 'us-east-1'
+const AWS_REGION = 'us-east-1'
 
 console.log('[tiles] Initializing S3 client with region:', AWS_REGION)
 console.log('[tiles] AWS_ACCESS_KEY_ID set:', !!process.env.AWS_ACCESS_KEY_ID)
@@ -47,13 +41,23 @@ export default defineEventHandler(async (event) => {
   })
 
   try {
-    const signedUrl = await getSignedUrl(s3Client, command, {
-      expiresIn: 3600,
-    })
+    const response = await s3Client.send(command)
+    const body = await response.Body?.transformToByteArray()
 
-    return sendRedirect(event, signedUrl, 302)
+    if (!body) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Tile not found',
+      })
+    }
+
+    setHeader(event, 'Content-Type', 'image/png')
+    setHeader(event, 'Cache-Control', 'public, max-age=3600')
+    setHeader(event, 'Access-Control-Allow-Origin', '*')
+
+    return body
   } catch (error) {
-    console.error('Error generating signed URL for tile:', key, error)
+    console.error('Error fetching tile from S3:', key, error)
     throw createError({
       statusCode: 404,
       statusMessage: 'Tile not found',
