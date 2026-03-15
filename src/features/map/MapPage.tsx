@@ -140,7 +140,7 @@ export default function MapPage() {
       .then((results) => {
         if (!isMounted) return
         setSuggestions(results)
-        setIsDropdownOpen(true)
+        setIsDropdownOpen(results.length > 0)
         if (results.length > 0) {
           setSearchMessage(null)
         }
@@ -148,6 +148,7 @@ export default function MapPage() {
       .catch(() => {
         if (!isMounted) return
         setSuggestions([])
+        setIsDropdownOpen(false)
       })
       .finally(() => {
         if (!isMounted) return
