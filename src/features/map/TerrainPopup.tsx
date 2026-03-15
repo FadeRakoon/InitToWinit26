@@ -38,7 +38,15 @@ export function TerrainPopup({
       style: {
         version: 8,
         sources: {
-          'terrain-dem': {
+          'terrain-source': {
+            type: 'raster-dem',
+            tiles: [TERRAIN_TILE_URL],
+            tileSize: 256,
+            encoding: 'mapbox',
+            minzoom: TERRAIN_MIN_ZOOM,
+            maxzoom: TERRAIN_MAX_ZOOM,
+          },
+          'hillshade-source': {
             type: 'raster-dem',
             tiles: [TERRAIN_TILE_URL],
             tileSize: 256,
@@ -58,7 +66,7 @@ export function TerrainPopup({
           {
             id: 'terrain-hillshade',
             type: 'hillshade',
-            source: 'terrain-dem',
+            source: 'hillshade-source',
             paint: {
               'hillshade-exaggeration': 0.8,
               'hillshade-shadow-color': '#1a1a2e',
@@ -77,11 +85,11 @@ export function TerrainPopup({
     map.on('load', () => {
       console.log('[terrain] Map loaded, setting terrain')
 
-      const source = map.getSource('terrain-dem')
+      const source = map.getSource('terrain-source')
       console.log('[terrain] Source:', source)
 
       map.setTerrain({
-        source: 'terrain-dem',
+        source: 'terrain-source',
         exaggeration: TERRAIN_EXAGGERATION,
       })
 
