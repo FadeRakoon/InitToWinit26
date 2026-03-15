@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { fromArrayBuffer, fromFile } from 'geotiff'
 import path from 'node:path'
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { deriveTileName } from './insightMath'
 
 const inputSchema = z.object({
   bounds: z.tuple([
@@ -43,8 +42,15 @@ function intersectBboxes(
 }
 
 function getTileFilename(lng: number, lat: number): string {
-  const tileName = deriveTileName([lng, lat])
-  return `${tileName}.tif`
+  const latInt = Math.floor(Math.abs(lat))
+  const latDir = lat >= 0 ? 'N' : 'S'
+  const latStr = latInt.toString().padStart(2, '0')
+
+  const lngInt = Math.ceil(Math.abs(lng))
+  const lngDir = lng <= 0 ? 'W' : 'E'
+  const lngStr = lngInt.toString().padStart(3, '0')
+
+  return `Copernicus_DSM_COG_10_${latDir}${latStr}_00_${lngDir}${lngStr}_00_DEM.tif`
 }
 
 async function loadTerrainRaster(
