@@ -75,7 +75,7 @@ export function TerrainPopup({
             type: 'hillshade',
             source: 'hillshade-source',
             paint: {
-              'hillshade-exaggeration': 0.8,
+              'hillshade-exaggeration': 0.5,
               'hillshade-shadow-color': '#1a1a2e',
               'hillshade-highlight-color': '#608aff',
               'hillshade-accent-color': '#38f872',
