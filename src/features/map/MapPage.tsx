@@ -1253,10 +1253,16 @@ function MapCanvas({
     const latStep = (north - south) / SUB_GRID_SIZE
     const lngStep = (east - west) / SUB_GRID_SIZE
 
+    console.log('[WaterOverlay] Bounds:', { west, south, east, north })
+    console.log('[WaterOverlay] Steps:', { latStep, lngStep })
+    console.log('[WaterOverlay] waterDepths length:', waterDepths.length)
+    console.log('[WaterOverlay] waterDepths sample:', waterDepths.slice(0, 25))
+
     // Create GeoJSON polygons for each sub-grid cell
-    // Row0 is at TOP (north), row (SUB_GRID_SIZE-1) is at BOTTOM (south)
+    // Row 0 is at TOP (north), row (SUB_GRID_SIZE-1) is at BOTTOM (south)
     // Col 0 is at LEFT (west), col (SUB_GRID_SIZE-1) is at RIGHT (east)
     const features: GeoJSON.Feature<GeoJSON.Polygon>[] = []
+    const featuresByRow: number[] = new Array(SUB_GRID_SIZE).fill(0)
 
     for (let row = 0; row < SUB_GRID_SIZE; row++) {
       for (let col = 0; col < SUB_GRID_SIZE; col++) {
@@ -1272,6 +1278,7 @@ function MapCanvas({
         const cellWest = west + col * lngStep
         const cellEast = cellWest + lngStep
 
+        featuresByRow[row]++
         features.push({
           type: 'Feature',
           properties: { depth },
@@ -1290,6 +1297,9 @@ function MapCanvas({
         })
       }
     }
+
+    console.log('[WaterOverlay] Features by row:', featuresByRow)
+    console.log('[WaterOverlay] Total features:', features.length)
 
     if (features.length === 0) return
 
