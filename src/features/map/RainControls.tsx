@@ -69,6 +69,7 @@ export function RainControls({
             const isFirstChild = idx === 0
             const isLastChild = idx === STORM_CATEGORIES.length - 1
             const isAbove = idx % 2 === 0
+            const leftPct = (cat.mmPerHr / MAX_MM) * 100
 
             const positionClass = isAbove
               ? 'rain-controls__notch--above'
@@ -84,7 +85,7 @@ export function RainControls({
                 key={cat.mmPerHr}
                 type="button"
                 className={`rain-controls__notch ${positionClass} ${edgeClass}`.trim()}
-                style={{ color: cat.color }}
+                style={{ left: `${leftPct}%`, color: cat.color }}
                 onClick={() => onChange(cat.mmPerHr)}
                 title={`${cat.label}${cat.mmPerHr > 0 ? ` (${cat.mmPerHr} mm/hr)` : ''}`}
               >
