@@ -18,7 +18,7 @@
       "@images/*": ["./images/*"]
     },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "nitropack/types"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",
