@@ -807,3 +807,100 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Flood risk section inside sidebar ───────────────────────────── */
+
+.map-page__flood-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.map-page__flood-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.map-page__flood-header svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Push the pause/resume button to the far right */
+.map-page__sim-toggle {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  transition: background 150ms ease;
+}
+
+.map-page__sim-toggle:hover {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.map-page__flood-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.map-page__flood-status--error {
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+
+/* Risk score progress bar */
+.map-page__risk-bar-wrap {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.map-page__risk-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease, background 0.6s ease;
+}
+
+/* Flow speed legend */
+.map-page__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+}
+
+.map-page__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.map-page__legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Divider between flood section and grid analysis */
+.map-page__divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.25rem 0;
+}
