@@ -960,12 +960,12 @@ function MapTopbar() {
         >
           Home
         </Link>
-        <a
-          href="/#about"
+        <Link
+          to="/about"
           className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
         >
           About
-        </a>
+        </Link>
         <a
           href="/#technology"
           className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
