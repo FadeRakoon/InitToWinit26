@@ -21,20 +21,66 @@ export type GridCellFeature = Feature<Polygon, GridCellProperties> & {
 
 export type GridFeatureCollection = FeatureCollection<Polygon, GridCellProperties>
 
-export type ActivityTone = 'low' | 'moderate' | 'high' | 'critical'
-
-export interface RegionAnalysisInput {
+export interface RegionInsightInput {
   kind: 'cell' | 'search'
   label: string
   center: LngLatTuple
+  bounds?: BoundsTuple
+  gridCellId?: string | null
 }
 
-export interface RegionAnalysis {
-  badge: string
-  heading: string
-  summary: string[]
-  activityLabel: string
-  activityTone: ActivityTone
-  anomaliesLabel: string
-  recommendation: string
+export type RiskBand = 'Low' | 'Moderate' | 'High' | 'Severe'
+export type ConfidenceBand = 'Low' | 'Medium' | 'High'
+
+export interface RiskProfile {
+  band: RiskBand
+  score: number
+  topDrivers: string[]
+  confidence: ConfidenceBand
+}
+
+export interface AIInsight {
+  headline: string
+  explanation: string
+  caution?: string
+}
+
+export interface RegionInsightMetrics {
+  elevationMinM?: number
+  elevationMeanM?: number
+  elevationMaxM?: number
+  reliefM?: number
+  landCoveragePct?: number
+  nearestSurgeStationKm?: number
+  surgeRp1M?: number
+  surgeRp10M?: number
+  surgeRp50M?: number
+  surgeRp100M?: number
+  nearbyStormCount?: number
+  strongestNearbyWindKt?: number
+  mostRecentNearbyStormYear?: number
+  estimatedPopulation?: number
+  populationDensityPerSqKm?: number
+}
+
+export interface HistoricalAnalog {
+  label: string
+  closestApproachKm: number
+  peakWindKt?: number
+  eventDate?: string
+}
+
+export interface DataQuality {
+  terrainAvailable: boolean
+  surgeAvailable: boolean
+  stormHistoryAvailable: boolean
+  confidenceNotes: string[]
+}
+
+export interface RegionInsightResponse {
+  riskProfile: RiskProfile
+  aiInsight: AIInsight
+  metrics: RegionInsightMetrics
+  historicalAnalog?: HistoricalAnalog
+  dataQuality: DataQuality
 }

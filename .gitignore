@@ -4,10 +4,16 @@ dist
 dist-ssr
 *.local
 .env
+.env.*
+!.env.example
 .nitro
 .tanstack
 .wrangler
 .output
 .vinxi
 __unconfig*
+coverage
+*.log
+*.tsbuildinfo
+.conductor/
 todos.json

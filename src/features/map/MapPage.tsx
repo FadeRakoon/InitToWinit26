@@ -1,6 +1,5 @@
 import { Link } from '@tanstack/react-router'
 import {
-  startTransition,
   useEffect,
   useEffectEvent,
   useRef,
@@ -17,11 +16,8 @@ import {
   X,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import maplibregl, {
-  type GeoJSONSource,
-  type MapGeoJSONFeature,
-  type MapLayerMouseEvent,
-} from 'maplibre-gl'
+import maplibregl from 'maplibre-gl'
+import type { MapLayerMouseEvent } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   DEFAULT_MAP_CENTER,
@@ -33,15 +29,16 @@ import {
   GRID_SOURCE_ID,
   MAP_STYLE_URL,
 } from './config'
-import { generateRegionAnalysis } from './analysis'
 import { createGridFeatureCollection } from './grid'
+import { getRegionInsights } from './insights'
 import { searchPlaces } from './search'
 import { useDebounce } from '../../hooks/useDebounce'
 import type {
   BoundsTuple,
   GridCellFeature,
   LngLatTuple,
-  RegionAnalysis,
+  RegionInsightInput,
+  RegionInsightResponse,
   SearchResult,
 } from './types'
 import { TerrainPopup } from './TerrainPopup'
@@ -49,7 +46,12 @@ import { TerrainPopup } from './TerrainPopup'
 type PanelState =
   | { status: 'empty' }
   | { status: 'loading'; label: string }
-  | { status: 'ready'; analysis: RegionAnalysis }
+  | {
+      status: 'ready'
+      label: string
+      kind: RegionInsightInput['kind']
+      insight: RegionInsightResponse
+    }
   | { status: 'error'; title: string; message: string }
 
 interface FocusTarget {
@@ -61,6 +63,18 @@ interface TerrainView {
   cellId: string
   center: LngLatTuple
   bounds: BoundsTuple
+}
+
+type MapSource = NonNullable<ReturnType<maplibregl.Map['getSource']>>
+type GeoJSONDataSource = MapSource & {
+  type: 'geojson'
+  setData: (data: ReturnType<typeof createGridFeatureCollection>) => void
+}
+
+function isGeoJSONSource(
+  source: ReturnType<maplibregl.Map['getSource']>,
+): source is GeoJSONDataSource {
+  return source?.type === 'geojson' && 'setData' in source
 }
 
 export default function MapPage() {
@@ -82,8 +96,8 @@ export default function MapPage() {
     !isTyping && searchQuery.trim() !== '' && searchQuery !== debouncedQuery
   const [terrainView, setTerrainView] = useState<TerrainView | null>(null)
   const [showTerrainPopup, setShowTerrainPopup] = useState(false)
-  const analysisTimeoutRef = useRef<number | null>(null)
   const typingTimeoutRef = useRef<number | null>(null)
+  const analysisRequestIdRef = useRef(0)
 
   const placeholders = [
     'Search regions...',
@@ -103,9 +117,6 @@ export default function MapPage() {
 
   useEffect(() => {
     return () => {
-      if (analysisTimeoutRef.current !== null) {
-        window.clearTimeout(analysisTimeoutRef.current)
-      }
       if (typingTimeoutRef.current !== null) {
         window.clearTimeout(typingTimeoutRef.current)
       }
@@ -140,7 +151,7 @@ export default function MapPage() {
       .then((results) => {
         if (!isMounted) return
         setSuggestions(results)
-        setIsDropdownOpen(true)
+        setIsDropdownOpen(results.length > 0)
         if (results.length > 0) {
           setSearchMessage(null)
         }
@@ -148,6 +159,7 @@ export default function MapPage() {
       .catch(() => {
         if (!isMounted) return
         setSuggestions([])
+        setIsDropdownOpen(false)
       })
       .finally(() => {
         if (!isMounted) return
@@ -159,28 +171,40 @@ export default function MapPage() {
     }
   }, [debouncedQuery])
 
-  const queueAnalysis = useEffectEvent(
-    (payload: {
-      kind: 'cell' | 'search'
-      label: string
-      center: LngLatTuple
-    }) => {
-      if (analysisTimeoutRef.current !== null) {
-        window.clearTimeout(analysisTimeoutRef.current)
+  const queueAnalysis = useEffectEvent(async (payload: RegionInsightInput) => {
+    const requestId = analysisRequestIdRef.current + 1
+    analysisRequestIdRef.current = requestId
+
+    setPanelState({ status: 'loading', label: payload.label })
+    setIsSidebarOpen(true)
+
+    try {
+      const insight = await getRegionInsights({ data: payload })
+
+      if (requestId !== analysisRequestIdRef.current) {
+        return
       }
 
-      setPanelState({ status: 'loading', label: payload.label })
+      setPanelState({
+        status: 'ready',
+        label: payload.label,
+        kind: payload.kind,
+        insight,
+      })
+    } catch {
+      if (requestId !== analysisRequestIdRef.current) {
+        return
+      }
+
+      setPanelState({
+        status: 'error',
+        title: 'Region insight unavailable',
+        message:
+          'Hazard signals could not be calculated for this location. Check the server data sources and try again.',
+      })
       setIsSidebarOpen(true)
-      analysisTimeoutRef.current = window.setTimeout(() => {
-        startTransition(() => {
-          setPanelState({
-            status: 'ready',
-            analysis: generateRegionAnalysis(payload),
-          })
-        })
-      }, 900)
-    },
-  )
+    }
+  })
 
   const handleCellSelect = useEffectEvent((feature: GridCellFeature) => {
     setSearchMessage(null)
@@ -202,6 +226,8 @@ export default function MapPage() {
       kind: 'cell',
       label: feature.properties.cellId,
       center: [centerLng, centerLat],
+      bounds,
+      gridCellId: feature.properties.cellId,
     })
   })
 
@@ -222,12 +248,15 @@ export default function MapPage() {
       kind: 'search',
       label: result.label,
       center: result.center,
+      bounds: result.bounds,
+      gridCellId: null,
     })
   })
 
   const handleSearchSubmit = useEffectEvent(async () => {
-    if (suggestions.length > 0) {
-      handleResultSelect(suggestions[0]!)
+    const topSuggestion = suggestions.at(0)
+    if (topSuggestion) {
+      handleResultSelect(topSuggestion)
       return
     }
 
@@ -242,7 +271,7 @@ export default function MapPage() {
 
     try {
       const results = await searchPlaces(trimmedQuery)
-      const selectedResult = results[0]
+      const selectedResult = results.at(0)
 
       if (!selectedResult) {
         setPanelState({
@@ -271,18 +300,10 @@ export default function MapPage() {
   })
 
   const closeSidebar = useEffectEvent(() => {
-    if (analysisTimeoutRef.current !== null) {
-      window.clearTimeout(analysisTimeoutRef.current)
-      analysisTimeoutRef.current = null
-    }
+    analysisRequestIdRef.current += 1
     setIsSidebarOpen(false)
     setShowTerrainPopup(false)
   })
-
-  const activityClassName =
-    panelState.status === 'ready'
-      ? `map-page__metric-value is-${panelState.analysis.activityTone}`
-      : 'map-page__metric-value'
 
   return (
     <main className="map-page">
@@ -446,8 +467,8 @@ export default function MapPage() {
         >
           <div className="map-page__sidebar-header">
             <div>
-              <p className="map-page__eyebrow">Region Analysis</p>
-              <h1>Operational view</h1>
+              <p className="map-page__eyebrow">Region Insights</p>
+              <h1>Hydrological view</h1>
             </div>
             <button
               type="button"
@@ -471,7 +492,7 @@ export default function MapPage() {
                   <MapPinned aria-hidden="true" size={40} />
                   <p>
                     Select a grid cell or search for a place to generate
-                    insights.
+                    hydrological insight.
                   </p>
                 </motion.div>
               )}
@@ -489,7 +510,7 @@ export default function MapPage() {
                     size={36}
                     className="is-spinning"
                   />
-                  <p>Analyzing {panelState.label}...</p>
+                  <p>Calculating hazard signals for {panelState.label}...</p>
                 </motion.div>
               )}
 
@@ -519,67 +540,180 @@ export default function MapPage() {
                       transition: { staggerChildren: 0.12 },
                     },
                   }}
-                  className="map-page__data"
+                  className="map-page__data flex flex-col gap-6"
                 >
-                  <motion.p
-                    variants={{
+                  <motion.div variants={{
                       hidden: { opacity: 0, y: 5 },
                       visible: { opacity: 1, y: 0 },
-                    }}
-                    className="map-page__badge"
-                  >
-                    {panelState.analysis.badge}
-                  </motion.p>
-                  <motion.h2
-                    variants={{
-                      hidden: { opacity: 0, y: 5 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
-                  >
-                    {panelState.analysis.heading}
-                  </motion.h2>
-                  <div className="map-page__copy">
-                    {panelState.analysis.summary.map((paragraph, i) => (
-                      <motion.p
-                        key={i}
-                        variants={{
-                          hidden: { opacity: 0, y: 10 },
-                          visible: { opacity: 1, y: 0 },
-                        }}
-                      >
-                        {paragraph}
-                      </motion.p>
-                    ))}
-                    <motion.p
-                      variants={{
-                        hidden: { opacity: 0, y: 10 },
-                        visible: { opacity: 1, y: 0 },
-                      }}
-                    >
-                      Recommendation:{' '}
-                      <em>{panelState.analysis.recommendation}</em>
-                    </motion.p>
-                  </div>
+                    }} className="flex flex-col gap-1 border-b border-white/10 pb-4">
+                    <p className="map-page__badge">
+                      {panelState.kind === 'cell' ? `Grid ${panelState.label}` : 'Search Focus'}
+                    </p>
+                    <h2 className="text-xl font-bold text-white mb-2">
+                      {panelState.label}
+                    </h2>
+                    
+                    {/* 1. High-Risk Quick Metrics Header */}
+                    <div className="flex flex-wrap items-center gap-3 mt-2">
+                      <div className={`px-3 py-1.5 rounded-md text-sm font-semibold flex items-center gap-2 ${panelState.insight.riskProfile.band === 'Severe' || panelState.insight.riskProfile.band === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : panelState.insight.riskProfile.band === 'Moderate' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30'}`}>
+                        <span>{panelState.insight.riskProfile.band} Risk</span>
+                      </div>
+                      <div className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-sm font-medium text-slate-300">
+                        Score: <span className="text-white font-bold">{panelState.insight.riskProfile.score}/100</span>
+                      </div>
+                    </div>
+                    {panelState.insight.riskProfile.topDrivers[0] && (
+                      <p className="text-sm text-slate-400 mt-2 italic border-l-2 border-slate-600 pl-3">
+                        Primary Factor: {panelState.insight.riskProfile.topDrivers[0]}
+                      </p>
+                    )}
+                  </motion.div>
 
+                  {/* 2. Actionable Advice & Mitigation */}
                   <motion.div
                     variants={{
                       hidden: { opacity: 0, y: 10 },
                       visible: { opacity: 1, y: 0 },
                     }}
-                    className="map-page__metrics"
+                    className="map-page__section bg-blue-900/10 border border-blue-500/20 rounded-lg p-4"
                   >
-                    <article className="map-page__metric">
-                      <span>Activity Level</span>
-                      <strong className={activityClassName}>
-                        {panelState.analysis.activityLabel}
-                      </strong>
-                    </article>
-                    <article className="map-page__metric">
-                      <span>Anomalies</span>
-                      <strong className="map-page__metric-value">
-                        {panelState.analysis.anomaliesLabel}
-                      </strong>
-                    </article>
+                    <p className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-3">
+                      Actionable Advice
+                    </p>
+                    <div className="flex flex-col gap-2 text-sm text-slate-200">
+                      <p className="font-semibold text-white">{panelState.insight.aiInsight.headline}</p>
+                      <p className="leading-relaxed">{panelState.insight.aiInsight.explanation}</p>
+                      {panelState.insight.aiInsight.caution && (
+                        <div className="mt-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 p-3 rounded text-xs leading-relaxed">
+                          <strong>Note:</strong> {panelState.insight.aiInsight.caution}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+
+                  {/* 3. The Baseline (Location Overview) */}
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 10 },
+                      visible: { opacity: 1, y: 0 },
+                    }}
+                    className="map-page__section"
+                  >
+                    <p className="map-page__section-label text-slate-400 font-medium">Ground Level & Context</p>
+                    <div className="map-page__metrics grid grid-cols-2 gap-3 mt-3">
+                      <article className="map-page__metric bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
+                        <span className="text-xs text-slate-400 mb-1 block">Average Elevation</span>
+                        <strong className="text-lg font-semibold text-white">
+                          {panelState.insight.metrics.elevationMeanM !== undefined ? `${panelState.insight.metrics.elevationMeanM}m` : 'N/A'}
+                        </strong>
+                      </article>
+                      <article className="map-page__metric bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
+                        <span className="text-xs text-slate-400 mb-1 block">Land Coverage</span>
+                        <strong className="text-lg font-semibold text-white">
+                          {panelState.insight.metrics.landCoveragePct !== undefined ? `${panelState.insight.metrics.landCoveragePct}%` : 'N/A'}
+                        </strong>
+                      </article>
+                    </div>
+                  </motion.div>
+
+                  {/* 4. The Water Threat (Storm Surge Risk) */}
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 10 },
+                      visible: { opacity: 1, y: 0 },
+                    }}
+                    className="map-page__section"
+                  >
+                    <p className="map-page__section-label text-slate-400 font-medium">Storm Surge Risk</p>
+                    <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                          <span className="text-xs text-slate-400 block mb-1">10-Year Storm</span>
+                          <strong className="text-base text-white">
+                            {panelState.insight.metrics.surgeRp10M !== undefined ? `${panelState.insight.metrics.surgeRp10M}m` : 'N/A'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-400 block mb-1">100-Year Storm</span>
+                          <strong className="text-base text-white">
+                            {panelState.insight.metrics.surgeRp100M !== undefined ? `${panelState.insight.metrics.surgeRp100M}m` : 'N/A'}
+                          </strong>
+                        </div>
+                      </div>
+                      {panelState.insight.metrics.surgeRp100M !== undefined && panelState.insight.metrics.elevationMeanM !== undefined && (
+                        <p className="text-xs text-slate-300 border-t border-slate-700 pt-2 mt-2">
+                          During a severe (100-year) storm, water could reach {panelState.insight.metrics.surgeRp100M}m. Compared with average ground around {panelState.insight.metrics.elevationMeanM}m, {panelState.insight.metrics.surgeRp100M > panelState.insight.metrics.elevationMeanM ? 'coastal flooding pressure can overtop local terrain and sharply raise flood risk.' : 'terrain still sits above the modeled surge level, so elevation helps moderate direct inundation risk.'}
+                        </p>
+                      )}
+                    </div>
+                  </motion.div>
+
+                  {/* 5. The Wind Threat (Historical Hurricane Activity) */}
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 10 },
+                      visible: { opacity: 1, y: 0 },
+                    }}
+                    className="map-page__section"
+                  >
+                    <p className="map-page__section-label text-slate-400 font-medium">Historical Hurricane Activity</p>
+                    <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
+                      <div className="grid grid-cols-2 gap-3 mb-3 border-b border-slate-700 pb-3">
+                         <div>
+                          <span className="text-xs text-slate-400 block mb-1">Storms Nearby</span>
+                          <strong className="text-base text-white">
+                            {panelState.insight.metrics.nearbyStormCount ?? '0'}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-400 block mb-1">Peak Winds</span>
+                          <strong className="text-base text-white">
+                            {panelState.insight.metrics.strongestNearbyWindKt !== undefined ? `${panelState.insight.metrics.strongestNearbyWindKt} kt` : 'N/A'}
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="text-sm text-slate-300">
+                        {panelState.insight.historicalAnalog ? (
+                          <p>
+                            <strong>Worst Case on Record:</strong> {panelState.insight.historicalAnalog.label} passed
+                            within {panelState.insight.historicalAnalog.closestApproachKm} km of this area
+                            {panelState.insight.historicalAnalog.peakWindKt !== undefined ? ` with peak winds of ${panelState.insight.historicalAnalog.peakWindKt} kt` : ''}
+                            {panelState.insight.historicalAnalog.eventDate ? ` on ${panelState.insight.historicalAnalog.eventDate}` : ''}.
+                          </p>
+                        ) : (
+                          <p>No major historical storm tracks found within the immediate comparison radius.</p>
+                        )}
+                      </div>
+                    </div>
+                  </motion.div>
+                  
+                  {/* 6. Community Context */}
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 10 },
+                      visible: { opacity: 1, y: 0 },
+                    }}
+                    className="map-page__section"
+                  >
+                    <p className="map-page__section-label text-slate-400 font-medium">Community Context</p>
+                    <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50 text-sm text-slate-300">
+                      {panelState.insight.metrics.populationDensityPerSqKm !== undefined || panelState.insight.metrics.estimatedPopulation !== undefined ? (
+                        <div className="flex flex-col gap-2">
+                          {panelState.insight.metrics.estimatedPopulation !== undefined ? (
+                            <p>
+                              <strong>Estimated Population:</strong> {panelState.insight.metrics.estimatedPopulation.toLocaleString()} people inside this analysis window.
+                            </p>
+                          ) : null}
+                          {panelState.insight.metrics.populationDensityPerSqKm !== undefined ? (
+                            <p>
+                              <strong>Population Density:</strong> {panelState.insight.metrics.populationDensityPerSqKm} per sq km. Denser areas can increase exposure and strain evacuation routes during a disaster.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p>Local population density data is currently unavailable for this specific grid area.</p>
+                      )}
+                    </div>
                   </motion.div>
 
                   {terrainView && (
@@ -589,11 +723,11 @@ export default function MapPage() {
                         hidden: { opacity: 0, y: 10 },
                         visible: { opacity: 1, y: 0 },
                       }}
-                      className="map-page__terrain-button"
+                      className="map-page__terrain-button mt-4 bg-white/10 hover:bg-white/20 text-white w-full py-3 rounded-md flex items-center justify-center gap-2 transition-colors border border-white/10"
                       onClick={() => setShowTerrainPopup(true)}
                     >
                       <Mountain aria-hidden="true" size={18} />
-                      <span>View Terrain</span>
+                      <span className="font-semibold">View Terrain Details</span>
                     </motion.button>
                   )}
                 </motion.div>
@@ -617,31 +751,35 @@ export default function MapPage() {
 
 function MapTopbar() {
   return (
-    <nav className="fixed top-0 left-0 z-[100] flex h-[70px] w-full items-center justify-between border-b border-white/5 bg-[rgba(8,15,26,0.3)] px-5 shadow-none backdrop-blur-md sm:px-10">
-      <div className="flex items-center gap-3 text-xl font-semibold tracking-[-0.3px] text-[var(--landing-text-primary)]">
+    <nav className="fixed top-0 left-0 z-[100] flex h-[70px] w-full items-center justify-between border-b border-white/5 bg-[#080f1a] px-5 shadow-none sm:px-10">
+      <Link
+        to="/"
+        className="flex items-center gap-3 text-xl font-bold tracking-[-0.3px] no-underline transition-opacity hover:opacity-80"
+        style={{ color: '#ffffff' }}
+      >
         <CloudLightning
           aria-hidden="true"
           className="h-[1.4rem] w-[1.4rem] text-[var(--landing-accent)]"
         />
         <span>Yaad Guard</span>
-      </div>
+      </Link>
 
-      <div className="flex items-center gap-4 sm:gap-8">
+      <div className="flex items-center gap-2 sm:gap-6">
         <Link
           to="/"
-          className="hidden text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-primary)] no-underline transition-colors duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] md:inline"
+          className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
         >
           Home
         </Link>
         <a
           href="/#about"
-          className="hidden text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-colors duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:text-[var(--landing-text-primary)] md:inline"
+          className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
         >
           About
         </a>
         <a
           href="/#technology"
-          className="hidden text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-colors duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:text-[var(--landing-text-primary)] md:inline"
+          className="hidden rounded-full px-4 py-2 text-[0.9rem] font-medium tracking-[0.3px] text-[var(--landing-text-secondary)] no-underline transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:bg-white/5 hover:text-[var(--landing-text-primary)] md:inline"
         >
           Technology
         </a>
@@ -680,7 +818,6 @@ function MapCanvas({
       style: MAP_STYLE_URL,
       center: DEFAULT_MAP_CENTER,
       zoom: DEFAULT_MAP_ZOOM,
-      attributionControl: true,
     })
 
     map.addControl(
@@ -689,10 +826,10 @@ function MapCanvas({
     )
 
     const setGridData = (center: LngLatTuple) => {
-      const source = map.getSource(GRID_SOURCE_ID) as GeoJSONSource | undefined
+      const source = map.getSource(GRID_SOURCE_ID)
       const data = createGridFeatureCollection({ center })
 
-      if (source) {
+      if (isGeoJSONSource(source)) {
         source.setData(data)
         return
       }
@@ -746,7 +883,7 @@ function MapCanvas({
     }
 
     const handleClick = (event: MapLayerMouseEvent) => {
-      const feature = event.features?.[0] as MapGeoJSONFeature | undefined
+      const feature = event.features?.[0]
 
       if (
         !feature ||
@@ -756,7 +893,7 @@ function MapCanvas({
         return
       }
 
-      const properties = feature.properties ?? {}
+      const properties = feature.properties
 
       clearActiveState()
       activeFeatureIdRef.current = Number(feature.id)
@@ -839,8 +976,8 @@ function MapCanvas({
       return
     }
 
-    const source = map.getSource(GRID_SOURCE_ID) as GeoJSONSource | undefined
-    if (!source) {
+    const source = map.getSource(GRID_SOURCE_ID)
+    if (!isGeoJSONSource(source)) {
       return
     }
 

@@ -676,7 +676,10 @@ a {
   bottom: 1.25rem;
   z-index: 20;
   display: flex;
-  width: min(360px, calc(100% - 2rem));
+  /* Allow the sidebar to be significantly wider, constrained only by the searchbar boundary */
+  width: 580px;
+  /* 50vw is the center, 140px is half the minimized searchbar (280px), 1.25rem is the sidebar's right offset, and 1.5rem is a safety gap */
+  max-width: calc(50vw - 140px - 1.25rem - 1.5rem);
   flex-direction: column;
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 1.5rem;
@@ -792,12 +795,24 @@ a {
   margin: 0 0 1rem;
 }
 
+.map-page__section {
+  margin-top: 1.35rem;
+}
+
+.map-page__section-label {
+  margin: 0 0 0.8rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .map-page__metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
-  margin-top: auto;
-  padding-top: 1rem;
+  padding-top: 0.15rem;
 }
 
 .map-page__metric {
@@ -864,7 +879,7 @@ a {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1120px) {
   .map-page__topbar {
     align-items: flex-start;
     flex-direction: column;
@@ -880,6 +895,7 @@ a {
     left: 1rem;
     bottom: 1rem;
     width: auto;
+    max-width: none;
     max-height: min(48vh, 420px);
   }
 }
