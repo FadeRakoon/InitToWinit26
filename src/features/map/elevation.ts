@@ -41,13 +41,27 @@ function intersectBboxes(
   return [west, south, east, north]
 }
 
-async function loadTerrainRaster() {
+function copernicusTileName(lng: number, lat: number): string {
+  const latInt = Math.floor(Math.abs(lat))
+  const latDir = lat >= 0 ? 'N' : 'S'
+
+  const lngInt = Math.ceil(Math.abs(lng))
+  const lngDir = lng <= 0 ? 'W' : 'E'
+
+  const latStr = latInt.toString().padStart(2, '0')
+  const lngStr = lngInt.toString().padStart(3, '0')
+
+  return `Copernicus_DSM_COG_10_${latDir}${latStr}_00_${lngDir}${lngStr}_00_DEM.tif`
+}
+
+async function loadTerrainRaster(
+  tileName: string,
+): Promise<RasterDataset | undefined> {
+  const s3Key = `caribbean_tiles/${tileName}`
   const localCandidates = [
     process.env.TERRAIN_RASTER_PATH,
-    path.join(process.cwd(), 'data', 'terrain.tif'),
-    path.join(process.cwd(), 'data', 'terrain.tiff'),
-    path.join(process.cwd(), 'public', 'terrain.tif'),
-    path.join(process.cwd(), 'public', 'terrain.tiff'),
+    path.join(process.cwd(), 'data', 'caribbean_tiles', tileName),
+    path.join(process.cwd(), 'public', 'caribbean_tiles', tileName),
   ].filter(Boolean) as string[]
 
   for (const localPath of localCandidates) {
@@ -57,12 +71,7 @@ async function loadTerrainRaster() {
     }
   }
 
-  const terrainRasterKey = process.env.TERRAIN_RASTER_KEY
-  if (!terrainRasterKey) {
-    return undefined
-  }
-
-  return loadRasterFromS3Key(terrainRasterKey)
+  return loadRasterFromS3Key(s3Key)
 }
 
 async function loadRasterFromPath(localPath: string) {
@@ -167,12 +176,16 @@ export const fetchSubGridElevations = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { bounds, subGridSize } = data
     const [[west, south], [east, north]] = bounds
+    const centerLng = (west + east) / 2
+    const centerLat = (south + north) / 2
 
-    const raster = await loadTerrainRaster()
+    const tileName = copernicusTileName(centerLng, centerLat)
+    const raster = await loadTerrainRaster(tileName)
+
     if (!raster) {
       return {
         success: false,
-        error: 'Terrain raster not available',
+        error: `Terrain tile not found: ${tileName}`,
         elevations: [],
       }
     }
