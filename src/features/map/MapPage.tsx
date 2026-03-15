@@ -1,10 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import {
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-} from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   CloudLightning,
   LoaderCircle,
@@ -28,11 +23,17 @@ import {
   GRID_OUTLINE_LAYER_ID,
   GRID_SOURCE_ID,
   MAP_STYLE_URL,
+  WATER_FILL_LAYER_ID,
+  WATER_SOURCE_ID,
 } from './config'
 import { createGridFeatureCollection } from './grid'
 import { getRegionInsights } from './insights'
 import { searchPlaces } from './search'
 import { useDebounce } from '../../hooks/useDebounce'
+import { computeWaterDepths } from './rain-sim'
+import { fetchSubGridElevations } from './elevation'
+import { RainControls } from './RainControls'
+import './rain-controls.css'
 import type {
   BoundsTuple,
   GridCellFeature,
@@ -98,6 +99,15 @@ export default function MapPage() {
   const [showTerrainPopup, setShowTerrainPopup] = useState(false)
   const typingTimeoutRef = useRef<number | null>(null)
   const analysisRequestIdRef = useRef(0)
+
+  // Rain simulation state
+  const [subGridElevations, setSubGridElevations] = useState<number[] | null>(
+    null,
+  )
+  const [elevationLoading, setElevationLoading] = useState(false)
+  const [mmPerHr, setMmPerHr] = useState(0)
+  const [waterDepths, setWaterDepths] = useState<number[]>([])
+  const selectedCellBoundsRef = useRef<BoundsTuple | null>(null)
 
   const placeholders = [
     'Search regions...',
@@ -305,6 +315,51 @@ export default function MapPage() {
     setShowTerrainPopup(false)
   })
 
+  // Fetch sub-grid elevations when cell is selected
+  useEffect(() => {
+    if (!terrainView) {
+      setSubGridElevations(null)
+      setWaterDepths([])
+      selectedCellBoundsRef.current = null
+      return
+    }
+
+    let cancelled = false
+    setElevationLoading(true)
+    setSubGridElevations(null)
+    selectedCellBoundsRef.current = terrainView.bounds
+
+    fetchSubGridElevations({
+      data: { bounds: terrainView.bounds, subGridSize: 20 },
+    })
+      .then((result) => {
+        if (cancelled) return
+        if (result.success && result.elevations) {
+          setSubGridElevations(result.elevations)
+          setWaterDepths(computeWaterDepths(result.elevations, mmPerHr))
+        }
+      })
+      .catch((err) => {
+        console.error('[MapPage] Failed to fetch elevations:', err)
+      })
+      .finally(() => {
+        if (!cancelled) setElevationLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terrainView])
+
+  // Handle rain slider change
+  const handleRainChange = useEffectEvent((newMm: number) => {
+    setMmPerHr(newMm)
+    if (subGridElevations) {
+      setWaterDepths(computeWaterDepths(subGridElevations, newMm))
+    }
+  })
+
   return (
     <main className="map-page">
       <MapTopbar />
@@ -315,6 +370,8 @@ export default function MapPage() {
           focusTarget={focusTarget}
           clearSelectionVersion={clearSelectionVersion}
           onCellSelect={handleCellSelect}
+          waterDepths={waterDepths.length > 0 ? waterDepths : null}
+          selectedCellBounds={selectedCellBoundsRef.current}
         />
 
         <div className="map-page__search">
@@ -322,11 +379,14 @@ export default function MapPage() {
             layout
             initial={false}
             animate={{
-              width: isFocused || searchQuery || isDropdownOpen ? '100%' : '280px',
-              borderColor: isFocused ? 'rgba(56, 189, 248, 0.55)' : 'rgba(255, 255, 255, 0.05)',
-              boxShadow: isFocused 
-                ? '0 10px 40px rgba(0, 0, 0, 0.34), 0 0 20px rgba(56, 189, 248, 0.15)' 
-                : '0 8px 32px rgba(0, 0, 0, 0.15)'
+              width:
+                isFocused || searchQuery || isDropdownOpen ? '100%' : '280px',
+              borderColor: isFocused
+                ? 'rgba(56, 189, 248, 0.55)'
+                : 'rgba(255, 255, 255, 0.05)',
+              boxShadow: isFocused
+                ? '0 10px 40px rgba(0, 0, 0, 0.34), 0 0 20px rgba(56, 189, 248, 0.15)'
+                : '0 8px 32px rgba(0, 0, 0, 0.15)',
             }}
             transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
             className="map-page__search-container"
@@ -479,6 +539,14 @@ export default function MapPage() {
             </button>
           </div>
 
+          {/* Rain simulation controls */}
+          <RainControls
+            mmPerHr={mmPerHr}
+            onChange={handleRainChange}
+            isLoading={elevationLoading}
+            hasElevation={subGridElevations !== null}
+          />
+
           <div className="map-page__sidebar-body">
             <AnimatePresence mode="wait">
               {panelState.status === 'empty' && (
@@ -542,29 +610,40 @@ export default function MapPage() {
                   }}
                   className="map-page__data flex flex-col gap-6"
                 >
-                  <motion.div variants={{
+                  <motion.div
+                    variants={{
                       hidden: { opacity: 0, y: 5 },
                       visible: { opacity: 1, y: 0 },
-                    }} className="flex flex-col gap-1 border-b border-white/10 pb-4">
+                    }}
+                    className="flex flex-col gap-1 border-b border-white/10 pb-4"
+                  >
                     <p className="map-page__badge">
-                      {panelState.kind === 'cell' ? `Grid ${panelState.label}` : 'Search Focus'}
+                      {panelState.kind === 'cell'
+                        ? `Grid ${panelState.label}`
+                        : 'Search Focus'}
                     </p>
                     <h2 className="text-xl font-bold text-white mb-2">
                       {panelState.label}
                     </h2>
-                    
+
                     {/* 1. High-Risk Quick Metrics Header */}
                     <div className="flex flex-wrap items-center gap-3 mt-2">
-                      <div className={`px-3 py-1.5 rounded-md text-sm font-semibold flex items-center gap-2 ${panelState.insight.riskProfile.band === 'Severe' || panelState.insight.riskProfile.band === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : panelState.insight.riskProfile.band === 'Moderate' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30'}`}>
+                      <div
+                        className={`px-3 py-1.5 rounded-md text-sm font-semibold flex items-center gap-2 ${panelState.insight.riskProfile.band === 'Severe' || panelState.insight.riskProfile.band === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : panelState.insight.riskProfile.band === 'Moderate' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' : 'bg-green-500/20 text-green-400 border border-green-500/30'}`}
+                      >
                         <span>{panelState.insight.riskProfile.band} Risk</span>
                       </div>
                       <div className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-sm font-medium text-slate-300">
-                        Score: <span className="text-white font-bold">{panelState.insight.riskProfile.score}/100</span>
+                        Score:{' '}
+                        <span className="text-white font-bold">
+                          {panelState.insight.riskProfile.score}/100
+                        </span>
                       </div>
                     </div>
                     {panelState.insight.riskProfile.topDrivers[0] && (
                       <p className="text-sm text-slate-400 mt-2 italic border-l-2 border-slate-600 pl-3">
-                        Primary Factor: {panelState.insight.riskProfile.topDrivers[0]}
+                        Primary Factor:{' '}
+                        {panelState.insight.riskProfile.topDrivers[0]}
                       </p>
                     )}
                   </motion.div>
@@ -581,11 +660,16 @@ export default function MapPage() {
                       Actionable Advice
                     </p>
                     <div className="flex flex-col gap-2 text-sm text-slate-200">
-                      <p className="font-semibold text-white">{panelState.insight.aiInsight.headline}</p>
-                      <p className="leading-relaxed">{panelState.insight.aiInsight.explanation}</p>
+                      <p className="font-semibold text-white">
+                        {panelState.insight.aiInsight.headline}
+                      </p>
+                      <p className="leading-relaxed">
+                        {panelState.insight.aiInsight.explanation}
+                      </p>
                       {panelState.insight.aiInsight.caution && (
                         <div className="mt-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 p-3 rounded text-xs leading-relaxed">
-                          <strong>Note:</strong> {panelState.insight.aiInsight.caution}
+                          <strong>Note:</strong>{' '}
+                          {panelState.insight.aiInsight.caution}
                         </div>
                       )}
                     </div>
@@ -599,18 +683,30 @@ export default function MapPage() {
                     }}
                     className="map-page__section"
                   >
-                    <p className="map-page__section-label text-slate-400 font-medium">Ground Level & Context</p>
+                    <p className="map-page__section-label text-slate-400 font-medium">
+                      Ground Level & Context
+                    </p>
                     <div className="map-page__metrics grid grid-cols-2 gap-3 mt-3">
                       <article className="map-page__metric bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
-                        <span className="text-xs text-slate-400 mb-1 block">Average Elevation</span>
+                        <span className="text-xs text-slate-400 mb-1 block">
+                          Average Elevation
+                        </span>
                         <strong className="text-lg font-semibold text-white">
-                          {panelState.insight.metrics.elevationMeanM !== undefined ? `${panelState.insight.metrics.elevationMeanM}m` : 'N/A'}
+                          {panelState.insight.metrics.elevationMeanM !==
+                          undefined
+                            ? `${panelState.insight.metrics.elevationMeanM}m`
+                            : 'N/A'}
                         </strong>
                       </article>
                       <article className="map-page__metric bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
-                        <span className="text-xs text-slate-400 mb-1 block">Land Coverage</span>
+                        <span className="text-xs text-slate-400 mb-1 block">
+                          Land Coverage
+                        </span>
                         <strong className="text-lg font-semibold text-white">
-                          {panelState.insight.metrics.landCoveragePct !== undefined ? `${panelState.insight.metrics.landCoveragePct}%` : 'N/A'}
+                          {panelState.insight.metrics.landCoveragePct !==
+                          undefined
+                            ? `${panelState.insight.metrics.landCoveragePct}%`
+                            : 'N/A'}
                         </strong>
                       </article>
                     </div>
@@ -624,27 +720,47 @@ export default function MapPage() {
                     }}
                     className="map-page__section"
                   >
-                    <p className="map-page__section-label text-slate-400 font-medium">Storm Surge Risk</p>
+                    <p className="map-page__section-label text-slate-400 font-medium">
+                      Storm Surge Risk
+                    </p>
                     <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
                       <div className="grid grid-cols-2 gap-3 mb-3">
                         <div>
-                          <span className="text-xs text-slate-400 block mb-1">10-Year Storm</span>
+                          <span className="text-xs text-slate-400 block mb-1">
+                            10-Year Storm
+                          </span>
                           <strong className="text-base text-white">
-                            {panelState.insight.metrics.surgeRp10M !== undefined ? `${panelState.insight.metrics.surgeRp10M}m` : 'N/A'}
+                            {panelState.insight.metrics.surgeRp10M !== undefined
+                              ? `${panelState.insight.metrics.surgeRp10M}m`
+                              : 'N/A'}
                           </strong>
                         </div>
                         <div>
-                          <span className="text-xs text-slate-400 block mb-1">100-Year Storm</span>
+                          <span className="text-xs text-slate-400 block mb-1">
+                            100-Year Storm
+                          </span>
                           <strong className="text-base text-white">
-                            {panelState.insight.metrics.surgeRp100M !== undefined ? `${panelState.insight.metrics.surgeRp100M}m` : 'N/A'}
+                            {panelState.insight.metrics.surgeRp100M !==
+                            undefined
+                              ? `${panelState.insight.metrics.surgeRp100M}m`
+                              : 'N/A'}
                           </strong>
                         </div>
                       </div>
-                      {panelState.insight.metrics.surgeRp100M !== undefined && panelState.insight.metrics.elevationMeanM !== undefined && (
-                        <p className="text-xs text-slate-300 border-t border-slate-700 pt-2 mt-2">
-                          During a severe (100-year) storm, water could reach {panelState.insight.metrics.surgeRp100M}m. Compared with average ground around {panelState.insight.metrics.elevationMeanM}m, {panelState.insight.metrics.surgeRp100M > panelState.insight.metrics.elevationMeanM ? 'coastal flooding pressure can overtop local terrain and sharply raise flood risk.' : 'terrain still sits above the modeled surge level, so elevation helps moderate direct inundation risk.'}
-                        </p>
-                      )}
+                      {panelState.insight.metrics.surgeRp100M !== undefined &&
+                        panelState.insight.metrics.elevationMeanM !==
+                          undefined && (
+                          <p className="text-xs text-slate-300 border-t border-slate-700 pt-2 mt-2">
+                            During a severe (100-year) storm, water could reach{' '}
+                            {panelState.insight.metrics.surgeRp100M}m. Compared
+                            with average ground around{' '}
+                            {panelState.insight.metrics.elevationMeanM}m,{' '}
+                            {panelState.insight.metrics.surgeRp100M >
+                            panelState.insight.metrics.elevationMeanM
+                              ? 'coastal flooding pressure can overtop local terrain and sharply raise flood risk.'
+                              : 'terrain still sits above the modeled surge level, so elevation helps moderate direct inundation risk.'}
+                          </p>
+                        )}
                     </div>
                   </motion.div>
 
@@ -656,37 +772,61 @@ export default function MapPage() {
                     }}
                     className="map-page__section"
                   >
-                    <p className="map-page__section-label text-slate-400 font-medium">Historical Hurricane Activity</p>
+                    <p className="map-page__section-label text-slate-400 font-medium">
+                      Historical Hurricane Activity
+                    </p>
                     <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50">
                       <div className="grid grid-cols-2 gap-3 mb-3 border-b border-slate-700 pb-3">
-                         <div>
-                          <span className="text-xs text-slate-400 block mb-1">Storms Nearby</span>
+                        <div>
+                          <span className="text-xs text-slate-400 block mb-1">
+                            Storms Nearby
+                          </span>
                           <strong className="text-base text-white">
                             {panelState.insight.metrics.nearbyStormCount ?? '0'}
                           </strong>
                         </div>
                         <div>
-                          <span className="text-xs text-slate-400 block mb-1">Peak Winds</span>
+                          <span className="text-xs text-slate-400 block mb-1">
+                            Peak Winds
+                          </span>
                           <strong className="text-base text-white">
-                            {panelState.insight.metrics.strongestNearbyWindKt !== undefined ? `${panelState.insight.metrics.strongestNearbyWindKt} kt` : 'N/A'}
+                            {panelState.insight.metrics
+                              .strongestNearbyWindKt !== undefined
+                              ? `${panelState.insight.metrics.strongestNearbyWindKt} kt`
+                              : 'N/A'}
                           </strong>
                         </div>
                       </div>
                       <div className="text-sm text-slate-300">
                         {panelState.insight.historicalAnalog ? (
                           <p>
-                            <strong>Worst Case on Record:</strong> {panelState.insight.historicalAnalog.label} passed
-                            within {panelState.insight.historicalAnalog.closestApproachKm} km of this area
-                            {panelState.insight.historicalAnalog.peakWindKt !== undefined ? ` with peak winds of ${panelState.insight.historicalAnalog.peakWindKt} kt` : ''}
-                            {panelState.insight.historicalAnalog.eventDate ? ` on ${panelState.insight.historicalAnalog.eventDate}` : ''}.
+                            <strong>Worst Case on Record:</strong>{' '}
+                            {panelState.insight.historicalAnalog.label} passed
+                            within{' '}
+                            {
+                              panelState.insight.historicalAnalog
+                                .closestApproachKm
+                            }{' '}
+                            km of this area
+                            {panelState.insight.historicalAnalog.peakWindKt !==
+                            undefined
+                              ? ` with peak winds of ${panelState.insight.historicalAnalog.peakWindKt} kt`
+                              : ''}
+                            {panelState.insight.historicalAnalog.eventDate
+                              ? ` on ${panelState.insight.historicalAnalog.eventDate}`
+                              : ''}
+                            .
                           </p>
                         ) : (
-                          <p>No major historical storm tracks found within the immediate comparison radius.</p>
+                          <p>
+                            No major historical storm tracks found within the
+                            immediate comparison radius.
+                          </p>
                         )}
                       </div>
                     </div>
                   </motion.div>
-                  
+
                   {/* 6. Community Context */}
                   <motion.div
                     variants={{
@@ -695,23 +835,41 @@ export default function MapPage() {
                     }}
                     className="map-page__section"
                   >
-                    <p className="map-page__section-label text-slate-400 font-medium">Community Context</p>
+                    <p className="map-page__section-label text-slate-400 font-medium">
+                      Community Context
+                    </p>
                     <div className="mt-3 bg-slate-800/50 p-3 rounded-md border border-slate-700/50 text-sm text-slate-300">
-                      {panelState.insight.metrics.populationDensityPerSqKm !== undefined || panelState.insight.metrics.estimatedPopulation !== undefined ? (
+                      {panelState.insight.metrics.populationDensityPerSqKm !==
+                        undefined ||
+                      panelState.insight.metrics.estimatedPopulation !==
+                        undefined ? (
                         <div className="flex flex-col gap-2">
-                          {panelState.insight.metrics.estimatedPopulation !== undefined ? (
+                          {panelState.insight.metrics.estimatedPopulation !==
+                          undefined ? (
                             <p>
-                              <strong>Estimated Population:</strong> {panelState.insight.metrics.estimatedPopulation.toLocaleString()} people inside this analysis window.
+                              <strong>Estimated Population:</strong>{' '}
+                              {panelState.insight.metrics.estimatedPopulation.toLocaleString()}{' '}
+                              people inside this analysis window.
                             </p>
                           ) : null}
-                          {panelState.insight.metrics.populationDensityPerSqKm !== undefined ? (
+                          {panelState.insight.metrics
+                            .populationDensityPerSqKm !== undefined ? (
                             <p>
-                              <strong>Population Density:</strong> {panelState.insight.metrics.populationDensityPerSqKm} per sq km. Denser areas can increase exposure and strain evacuation routes during a disaster.
+                              <strong>Population Density:</strong>{' '}
+                              {
+                                panelState.insight.metrics
+                                  .populationDensityPerSqKm
+                              }{' '}
+                              per sq km. Denser areas can increase exposure and
+                              strain evacuation routes during a disaster.
                             </p>
                           ) : null}
                         </div>
                       ) : (
-                        <p>Local population density data is currently unavailable for this specific grid area.</p>
+                        <p>
+                          Local population density data is currently unavailable
+                          for this specific grid area.
+                        </p>
                       )}
                     </div>
                   </motion.div>
@@ -727,7 +885,9 @@ export default function MapPage() {
                       onClick={() => setShowTerrainPopup(true)}
                     >
                       <Mountain aria-hidden="true" size={18} />
-                      <span className="font-semibold">View Terrain Details</span>
+                      <span className="font-semibold">
+                        View Terrain Details
+                      </span>
                     </motion.button>
                   )}
                 </motion.div>
@@ -793,11 +953,15 @@ function MapCanvas({
   focusTarget,
   clearSelectionVersion,
   onCellSelect,
+  waterDepths,
+  selectedCellBounds,
 }: {
   gridCenter: LngLatTuple
   focusTarget: FocusTarget | null
   clearSelectionVersion: number
   onCellSelect: (feature: GridCellFeature) => void
+  waterDepths: number[] | null
+  selectedCellBounds: BoundsTuple | null
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -1030,6 +1194,97 @@ function MapCanvas({
       activeFeatureIdRef.current = null
     }
   }, [clearSelectionVersion])
+
+  // Water depth overlay
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isReadyRef.current) {
+      return
+    }
+
+    // Remove existing water layer and source
+    if (map.getLayer(WATER_FILL_LAYER_ID)) {
+      map.removeLayer(WATER_FILL_LAYER_ID)
+    }
+    if (map.getSource(WATER_SOURCE_ID)) {
+      map.removeSource(WATER_SOURCE_ID)
+    }
+
+    // Exit if no depths or no bounds
+    if (!waterDepths || !selectedCellBounds) {
+      return
+    }
+
+    const SUBGrid_SIZE = 20
+    const [[west, south], [east, north]] = selectedCellBounds
+    const latStep = (north - south) / SUBGrid_SIZE
+    const lngStep = (east - west) / SUBGrid_SIZE
+
+    // Create GeoJSON polygons for each sub-grid cell
+    const features: GeoJSON.Feature<GeoJSON.Polygon>[] = []
+
+    for (let row = 0; row < SUBGrid_SIZE; row++) {
+      for (let col = 0; col < SUBGrid_SIZE; col++) {
+        const idx = row * SUBGrid_SIZE + col
+        const depth = waterDepths[idx] ?? 0
+
+        if (depth <= 0) continue
+
+        const cellWest = west + lngStep * col
+        const cellEast = west + lngStep * (col + 1)
+        const cellSouth = south + latStep * (SUBGrid_SIZE - row - 1)
+        const cellNorth = south + latStep * (SUBGrid_SIZE - row)
+
+        features.push({
+          type: 'Feature',
+          properties: { depth },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [cellWest, cellSouth],
+                [cellEast, cellSouth],
+                [cellEast, cellNorth],
+                [cellWest, cellNorth],
+                [cellWest, cellSouth],
+              ],
+            ],
+          },
+        })
+      }
+    }
+
+    if (features.length === 0) return
+
+    map.addSource(WATER_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features },
+    })
+
+    map.addLayer({
+      id: WATER_FILL_LAYER_ID,
+      type: 'fill',
+      source: WATER_SOURCE_ID,
+      paint: {
+        'fill-color': [
+          'interpolate',
+          ['linear'],
+          ['get', 'depth'],
+          0,
+          'rgba(191, 219, 254, 0.3)',
+          0.05,
+          'rgba(96, 165, 250, 0.45)',
+          0.1,
+          'rgba(37, 99, 235, 0.55)',
+          0.25,
+          'rgba(30, 64, 175, 0.65)',
+          0.5,
+          'rgba(30, 27, 75, 0.75)',
+        ],
+        'fill-opacity': 1,
+      },
+    })
+  }, [waterDepths, selectedCellBounds])
 
   return (
     <div
