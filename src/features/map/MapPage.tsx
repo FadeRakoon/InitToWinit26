@@ -10,6 +10,7 @@ import {
   CloudLightning,
   LoaderCircle,
   MapPinned,
+  Mountain,
   Search,
   Sparkles,
   X,
@@ -24,6 +25,8 @@ import {
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
   GRID_FILL_LAYER_ID,
+  GRID_LAT_STEP,
+  GRID_LNG_STEP,
   GRID_OUTLINE_LAYER_ID,
   GRID_SOURCE_ID,
   MAP_STYLE_URL,
@@ -32,11 +35,13 @@ import { generateRegionAnalysis } from './analysis'
 import { createGridFeatureCollection } from './grid'
 import { searchPlaces } from './search'
 import type {
+  BoundsTuple,
   GridCellFeature,
   LngLatTuple,
   RegionAnalysis,
   SearchResult,
 } from './types'
+import { TerrainPopup } from './TerrainPopup'
 
 type PanelState =
   | { status: 'empty' }
@@ -49,6 +54,12 @@ interface FocusTarget {
   result: SearchResult
 }
 
+interface TerrainView {
+  cellId: string
+  center: LngLatTuple
+  bounds: BoundsTuple
+}
+
 export default function MapPage() {
   const [panelState, setPanelState] = useState<PanelState>({ status: 'empty' })
   const [gridCenter, setGridCenter] = useState<LngLatTuple>(DEFAULT_MAP_CENTER)
@@ -57,6 +68,8 @@ export default function MapPage() {
   const [searchMessage, setSearchMessage] = useState<string | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [clearSelectionVersion, setClearSelectionVersion] = useState(0)
+  const [terrainView, setTerrainView] = useState<TerrainView | null>(null)
+  const [showTerrainPopup, setShowTerrainPopup] = useState(false)
   const analysisTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -91,10 +104,23 @@ export default function MapPage() {
 
   const handleCellSelect = useEffectEvent((feature: GridCellFeature) => {
     setSearchMessage(null)
+    const centerLng = feature.properties.centerLng
+    const centerLat = feature.properties.centerLat
+    const halfLatStep = GRID_LAT_STEP / 2
+    const halfLngStep = GRID_LNG_STEP / 2
+    const bounds: BoundsTuple = [
+      [centerLng - halfLngStep, centerLat - halfLatStep],
+      [centerLng + halfLngStep, centerLat + halfLatStep],
+    ]
+    setTerrainView({
+      cellId: feature.properties.cellId,
+      center: [centerLng, centerLat],
+      bounds,
+    })
     queueAnalysis({
       kind: 'cell',
       label: feature.properties.cellId,
-      center: [feature.properties.centerLng, feature.properties.centerLat],
+      center: [centerLng, centerLat],
     })
   })
 
@@ -157,6 +183,8 @@ export default function MapPage() {
     setPanelState({ status: 'empty' })
     setSearchMessage(null)
     setClearSelectionVersion((version) => version + 1)
+    setTerrainView(null)
+    setShowTerrainPopup(false)
   })
 
   const activityClassName =
@@ -286,11 +314,31 @@ export default function MapPage() {
                     </strong>
                   </article>
                 </div>
+
+                {terrainView && (
+                  <button
+                    type="button"
+                    className="map-page__terrain-button"
+                    onClick={() => setShowTerrainPopup(true)}
+                  >
+                    <Mountain aria-hidden="true" size={18} />
+                    <span>View Terrain</span>
+                  </button>
+                )}
               </div>
             ) : null}
           </div>
         </aside>
       </section>
+
+      {showTerrainPopup && terrainView && (
+        <TerrainPopup
+          cellId={terrainView.cellId}
+          center={terrainView.center}
+          bounds={terrainView.bounds}
+          onClose={() => setShowTerrainPopup(false)}
+        />
+      )}
     </main>
   )
 }
