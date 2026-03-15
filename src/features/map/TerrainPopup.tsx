@@ -3,11 +3,9 @@ import { X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import {
   DEFAULT_MAP_ZOOM,
-  MAP_STYLE_URL,
   TERRAIN_EXAGGERATION,
   TERRAIN_MAX_ZOOM,
   TERRAIN_MIN_ZOOM,
-  TERRAIN_SOURCE_ID,
   TERRAIN_TILE_URL,
 } from './config'
 import type { BoundsTuple, LngLatTuple } from './types'
@@ -37,65 +35,95 @@ export function TerrainPopup({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
+      style: {
+        version: 8,
+        sources: {
+          'terrain-source': {
+            type: 'raster-dem',
+            tiles: [TERRAIN_TILE_URL],
+            tileSize: 256,
+            encoding: 'mapbox',
+            minzoom: TERRAIN_MIN_ZOOM,
+            maxzoom: TERRAIN_MAX_ZOOM,
+          },
+          'hillshade-source': {
+            type: 'raster-dem',
+            tiles: [TERRAIN_TILE_URL],
+            tileSize: 256,
+            encoding: 'mapbox',
+            minzoom: TERRAIN_MIN_ZOOM,
+            maxzoom: TERRAIN_MAX_ZOOM,
+          },
+        },
+        layers: [
+          {
+            id: 'background',
+            type: 'background',
+            paint: {
+              'background-color': '#0a0a1a',
+            },
+          },
+          {
+            id: 'terrain-hillshade',
+            type: 'hillshade',
+            source: 'hillshade-source',
+            paint: {
+              'hillshade-exaggeration': 0.8,
+              'hillshade-shadow-color': '#1a1a2e',
+              'hillshade-highlight-color': '#60d4ff',
+              'hillshade-accent-color': '#38bdf8',
+            },
+          },
+        ],
+      },
       center: center,
       zoom: DEFAULT_MAP_ZOOM + 2,
-      pitch: 45,
+      pitch: 60,
       bearing: -30,
-      maxZoom: TERRAIN_MAX_ZOOM,
-      minZoom: TERRAIN_MIN_ZOOM,
     })
 
     map.on('load', () => {
-      try {
-        map.addSource(TERRAIN_SOURCE_ID, {
-          type: 'raster-dem',
-          tiles: [TERRAIN_TILE_URL],
-          tileSize: 256,
-          encoding: 'mapbox',
-          minzoom: TERRAIN_MIN_ZOOM,
-          maxzoom: TERRAIN_MAX_ZOOM,
-        })
+      console.log('[terrain] Map loaded, setting terrain')
 
-        map.setTerrain({
-          source: TERRAIN_SOURCE_ID,
-          exaggeration: TERRAIN_EXAGGERATION,
-        })
+      const source = map.getSource('terrain-source')
+      console.log('[terrain] Source:', source)
 
-        map.addLayer({
-          id: 'terrain-hillshade',
-          type: 'hillshade',
-          source: TERRAIN_SOURCE_ID,
-          paint: {
-            'hillshade-exaggeration': 0.8,
-            'hillshade-shadow-color': '#1a1a2e',
-            'hillshade-highlight-color': '#60d4ff',
-            'hillshade-accent-color': '#38bdf8',
-          },
-        })
+      map.setTerrain({
+        source: 'terrain-source',
+        exaggeration: TERRAIN_EXAGGERATION,
+      })
 
-        const [sw, ne] = bounds
-        map.fitBounds(
-          [
-            [sw[0], sw[1]],
-            [ne[0], ne[1]],
-          ],
-          {
-            padding: 50,
-            duration: 1000,
-            pitch: 45,
-            bearing: -30,
-          },
-        )
+      console.log('[terrain] Terrain set')
 
-        setIsLoading(false)
-      } catch (err) {
-        setError('Failed to load terrain data')
-        setIsLoading(false)
+      const [sw, ne] = bounds
+      map.fitBounds(
+        [
+          [sw[0], sw[1]],
+          [ne[0], ne[1]],
+        ],
+        {
+          padding: 50,
+          duration: 1000,
+          pitch: 60,
+          bearing: -30,
+        },
+      )
+
+      setIsLoading(false)
+    })
+
+    map.on('terrain', (e) => {
+      console.log('[terrain] Terrain event:', e)
+    })
+
+    map.on('sourcedata', (e) => {
+      if (e.isSourceLoaded && e.sourceId === 'terrain-dem') {
+        console.log('[terrain] Terrain source loaded')
       }
     })
 
-    map.on('error', () => {
+    map.on('error', (e) => {
+      console.error('[terrain] Map error:', e.error)
       setError('Failed to initialize terrain view')
       setIsLoading(false)
     })
