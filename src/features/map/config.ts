@@ -16,3 +16,10 @@ export const GRID_LNG_STEP = 0.02
 export const GRID_SOURCE_ID = 'map-grid-source'
 export const GRID_FILL_LAYER_ID = 'map-grid-fill'
 export const GRID_OUTLINE_LAYER_ID = 'map-grid-outline'
+
+export const TERRAIN_TILE_URL =
+  'https://function-bun-production-6756.up.railway.app/tiles/{z}/{x}/{y}.png'
+export const TERRAIN_SOURCE_ID = 'terrain-dem-source'
+export const TERRAIN_MIN_ZOOM = 10
+export const TERRAIN_MAX_ZOOM = 15
+export const TERRAIN_EXAGGERATION = 1.5
