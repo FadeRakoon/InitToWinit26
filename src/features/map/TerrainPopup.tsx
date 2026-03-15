@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, RotateCcw } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import {
-  MAP_STYLE_URL,
   TERRAIN_BASE_SHIFT,
   TERRAIN_BLUE_FACTOR,
   DEFAULT_MAP_ZOOM,
@@ -34,32 +33,93 @@ export function TerrainPopup({
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
+  const tileErrorCountRef = useRef(0)
+  const totalTilesRef = useRef(0)
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) {
+    if (!containerRef.current) {
       return
     }
+
+    if (mapRef.current) {
+      mapRef.current.remove()
+      mapRef.current = null
+    }
+
+    setIsLoading(true)
+    setError(null)
+    tileErrorCountRef.current = 0
+    totalTilesRef.current = 0
+
+    const [sw, ne] = bounds
+    const lngPadding = Math.max((ne[0] - sw[0]) * 3, 0.035)
+    const latPadding = Math.max((ne[1] - sw[1]) * 3, 0.03)
+    const expandedBounds: BoundsTuple = [
+      [center[0] - lngPadding, center[1] - latPadding],
+      [center[0] + lngPadding, center[1] + latPadding],
+    ]
 
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: {
         version: 8,
         sources: {
-          'terrain-source': {
+          [TERRAIN_SOURCE_ID]: {
             type: 'raster-dem',
             tiles: [TERRAIN_TILE_URL],
             tileSize: 256,
-            encoding: 'mapbox',
+            encoding: 'custom',
+            redFactor: TERRAIN_RED_FACTOR,
+            greenFactor: TERRAIN_GREEN_FACTOR,
+            blueFactor: TERRAIN_BLUE_FACTOR,
+            baseShift: TERRAIN_BASE_SHIFT,
             minzoom: TERRAIN_MIN_ZOOM,
             maxzoom: TERRAIN_MAX_ZOOM,
           },
-          'hillshade-source': {
+          [TERRAIN_HILLSHADE_SOURCE_ID]: {
             type: 'raster-dem',
             tiles: [TERRAIN_TILE_URL],
             tileSize: 256,
-            encoding: 'mapbox',
+            encoding: 'custom',
+            redFactor: TERRAIN_RED_FACTOR,
+            greenFactor: TERRAIN_GREEN_FACTOR,
+            blueFactor: TERRAIN_BLUE_FACTOR,
+            baseShift: TERRAIN_BASE_SHIFT,
             minzoom: TERRAIN_MIN_ZOOM,
             maxzoom: TERRAIN_MAX_ZOOM,
+          },
+          'terrain-focus': {
+            type: 'geojson',
+            data: {
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: {},
+                  geometry: {
+                    type: 'Polygon',
+                    coordinates: [
+                      [
+                        [sw[0], sw[1]],
+                        [ne[0], sw[1]],
+                        [ne[0], ne[1]],
+                        [sw[0], ne[1]],
+                        [sw[0], sw[1]],
+                      ],
+                    ],
+                  },
+                },
+                {
+                  type: 'Feature',
+                  properties: { cellId },
+                  geometry: {
+                    type: 'Point',
+                    coordinates: center,
+                  },
+                },
+              ],
+            },
           },
         },
         layers: [
@@ -73,15 +133,71 @@ export function TerrainPopup({
           {
             id: 'terrain-hillshade',
             type: 'hillshade',
-            source: 'hillshade-source',
+            source: TERRAIN_HILLSHADE_SOURCE_ID,
             paint: {
               'hillshade-exaggeration': 0.5,
               'hillshade-shadow-color': '#1a1a2e',
-              'hillshade-highlight-color': '#608aff',
-              'hillshade-accent-color': '#38f872',
+              'hillshade-highlight-color': '#60d4ff',
+              'hillshade-accent-color': '#38bdf8',
+            },
+          },
+          {
+            id: 'terrain-focus-fill',
+            type: 'fill',
+            source: 'terrain-focus',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: {
+              'fill-color': '#38bdf8',
+              'fill-opacity': 0.14,
+            },
+          },
+          {
+            id: 'terrain-focus-outline',
+            type: 'line',
+            source: 'terrain-focus',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: {
+              'line-color': '#b7f0ff',
+              'line-width': 3,
+              'line-opacity': 0.95,
+            },
+          },
+          {
+            id: 'terrain-focus-point',
+            type: 'circle',
+            source: 'terrain-focus',
+            filter: ['==', ['geometry-type'], 'Point'],
+            paint: {
+              'circle-radius': 7,
+              'circle-color': '#e0f2fe',
+              'circle-stroke-color': '#38bdf8',
+              'circle-stroke-width': 3,
+            },
+          },
+          {
+            id: 'terrain-focus-label',
+            type: 'symbol',
+            source: 'terrain-focus',
+            filter: ['==', ['geometry-type'], 'Point'],
+            layout: {
+              'text-field': ['get', 'cellId'],
+              'text-size': 13,
+              'text-letter-spacing': 0.08,
+              'text-font': ['Open Sans Semibold'],
+              'text-offset': [0, -1.5],
+              'text-anchor': 'bottom',
+            },
+            paint: {
+              'text-color': '#f8fdff',
+              'text-halo-color': 'rgba(7, 17, 27, 0.92)',
+              'text-halo-width': 1.5,
             },
           },
         ],
+        terrain: {
+          source: TERRAIN_SOURCE_ID,
+          exaggeration: TERRAIN_EXAGGERATION,
+        },
       },
       center: center,
       zoom: DEFAULT_MAP_ZOOM,
@@ -91,147 +207,20 @@ export function TerrainPopup({
       minZoom: TERRAIN_MIN_ZOOM,
     })
 
+    const handleTileError = () => {
+      tileErrorCountRef.current++
+      if (
+        totalTilesRef.current > 0 &&
+        tileErrorCountRef.current >= totalTilesRef.current
+      ) {
+        setError('Failed to load terrain tiles. Click retry to try again.')
+        setIsLoading(false)
+      }
+    }
+
+    map.on('error', handleTileError)
+
     map.on('load', () => {
-      const [sw, ne] = bounds
-      const lngPadding = Math.max((ne[0] - sw[0]) * 3, 0.035)
-      const latPadding = Math.max((ne[1] - sw[1]) * 3, 0.03)
-      const expandedBounds: BoundsTuple = [
-        [center[0] - lngPadding, center[1] - latPadding],
-        [center[0] + lngPadding, center[1] + latPadding],
-      ]
-
-      map.addSource(TERRAIN_SOURCE_ID, {
-        type: 'raster-dem',
-        tiles: [TERRAIN_TILE_URL],
-        tileSize: 256,
-        encoding: 'custom',
-        redFactor: TERRAIN_RED_FACTOR,
-        greenFactor: TERRAIN_GREEN_FACTOR,
-        blueFactor: TERRAIN_BLUE_FACTOR,
-        baseShift: TERRAIN_BASE_SHIFT,
-        minzoom: TERRAIN_MIN_ZOOM,
-        maxzoom: TERRAIN_MAX_ZOOM,
-      })
-
-      map.addSource(TERRAIN_HILLSHADE_SOURCE_ID, {
-        type: 'raster-dem',
-        tiles: [TERRAIN_TILE_URL],
-        tileSize: 256,
-        encoding: 'custom',
-        redFactor: TERRAIN_RED_FACTOR,
-        greenFactor: TERRAIN_GREEN_FACTOR,
-        blueFactor: TERRAIN_BLUE_FACTOR,
-        baseShift: TERRAIN_BASE_SHIFT,
-        minzoom: TERRAIN_MIN_ZOOM,
-        maxzoom: TERRAIN_MAX_ZOOM,
-      })
-
-      map.addSource('terrain-focus', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              properties: {},
-              geometry: {
-                type: 'Polygon',
-                coordinates: [[
-                  [sw[0], sw[1]],
-                  [ne[0], sw[1]],
-                  [ne[0], ne[1]],
-                  [sw[0], ne[1]],
-                  [sw[0], sw[1]],
-                ]],
-              },
-            },
-            {
-              type: 'Feature',
-              properties: {
-                cellId,
-              },
-              geometry: {
-                type: 'Point',
-                coordinates: center,
-              },
-            },
-          ],
-        },
-      })
-
-      map.setTerrain({
-        source: TERRAIN_SOURCE_ID,
-        exaggeration: TERRAIN_EXAGGERATION,
-      })
-
-      map.addLayer({
-        id: 'terrain-hillshade',
-        type: 'hillshade',
-        source: TERRAIN_HILLSHADE_SOURCE_ID,
-        paint: {
-          'hillshade-exaggeration': 0.8,
-          'hillshade-shadow-color': '#1a1a2e',
-          'hillshade-highlight-color': '#60d4ff',
-          'hillshade-accent-color': '#38bdf8',
-        },
-      })
-
-      map.addLayer({
-        id: 'terrain-focus-fill',
-        type: 'fill',
-        source: 'terrain-focus',
-        filter: ['==', ['geometry-type'], 'Polygon'],
-        paint: {
-          'fill-color': '#38bdf8',
-          'fill-opacity': 0.14,
-        },
-      })
-
-      map.addLayer({
-        id: 'terrain-focus-outline',
-        type: 'line',
-        source: 'terrain-focus',
-        filter: ['==', ['geometry-type'], 'Polygon'],
-        paint: {
-          'line-color': '#b7f0ff',
-          'line-width': 3,
-          'line-opacity': 0.95,
-        },
-      })
-
-      map.addLayer({
-        id: 'terrain-focus-point',
-        type: 'circle',
-        source: 'terrain-focus',
-        filter: ['==', ['geometry-type'], 'Point'],
-        paint: {
-          'circle-radius': 7,
-          'circle-color': '#e0f2fe',
-          'circle-stroke-color': '#38bdf8',
-          'circle-stroke-width': 3,
-        },
-      })
-
-      map.addLayer({
-        id: 'terrain-focus-label',
-        type: 'symbol',
-        source: 'terrain-focus',
-        filter: ['==', ['geometry-type'], 'Point'],
-        layout: {
-          'text-field': ['get', 'cellId'],
-          'text-size': 13,
-          'text-letter-spacing': 0.08,
-          'text-font': ['Open Sans Semibold'],
-          'text-offset': [0, -1.5],
-          'text-anchor': 'bottom',
-        },
-        paint: {
-          'text-color': '#f8fdff',
-          'text-halo-color': 'rgba(7, 17, 27, 0.92)',
-          'text-halo-width': 1.5,
-        },
-      })
-
       map.fitBounds(
         [
           [expandedBounds[0][0], expandedBounds[0][1]],
@@ -256,11 +245,6 @@ export function TerrainPopup({
       }, 0)
     })
 
-    map.on('error', (e) => {
-      setError('Failed to initialize terrain view')
-      setIsLoading(false)
-    })
-
     mapRef.current = map
 
     return () => {
@@ -269,7 +253,11 @@ export function TerrainPopup({
         mapRef.current = null
       }
     }
-  }, [center, bounds])
+  }, [center, bounds, retryCount])
+
+  const handleRetry = () => {
+    setRetryCount((prev) => prev + 1)
+  }
 
   return (
     <div className="terrain-popup__overlay" onClick={onClose}>
@@ -304,6 +292,14 @@ export function TerrainPopup({
           {error && (
             <div className="terrain-popup__error">
               <span>{error}</span>
+              <button
+                className="terrain-popup__retry"
+                onClick={handleRetry}
+                aria-label="Retry loading terrain"
+              >
+                <RotateCcw size={16} />
+                Retry
+              </button>
             </div>
           )}
           <div

@@ -65,22 +65,34 @@ export function RainControls({
         />
 
         <div className="rain-controls__notches" aria-hidden="true">
-          {STORM_CATEGORIES.map((cat) => (
-            <button
-              key={cat.mmPerHr}
-              type="button"
-              className="rain-controls__notch"
-              style={{
-                left: `${(cat.mmPerHr / MAX_MM) * 100}%`,
-                color: cat.color,
-              }}
-              onClick={() => onChange(cat.mmPerHr)}
-              title={`${cat.label}${cat.mmPerHr > 0 ? ` (${cat.mmPerHr} mm/hr)` : ''}`}
-            >
-              <span className="rain-controls__notch-tick" />
-              <span className="rain-controls__notch-label">{cat.label}</span>
-            </button>
-          ))}
+          {STORM_CATEGORIES.map((cat, idx) => {
+            const isFirstChild = idx === 0
+            const isLastChild = idx === STORM_CATEGORIES.length - 1
+            const isAbove = idx % 2 === 0
+
+            const positionClass = isAbove
+              ? 'rain-controls__notch--above'
+              : 'rain-controls__notch--below'
+            const edgeClass = isFirstChild
+              ? 'rain-controls__notch--edge-left'
+              : isLastChild
+                ? 'rain-controls__notch--edge-right'
+                : ''
+
+            return (
+              <button
+                key={cat.mmPerHr}
+                type="button"
+                className={`rain-controls__notch ${positionClass} ${edgeClass}`.trim()}
+                style={{ color: cat.color }}
+                onClick={() => onChange(cat.mmPerHr)}
+                title={`${cat.label}${cat.mmPerHr > 0 ? ` (${cat.mmPerHr} mm/hr)` : ''}`}
+              >
+                <span className="rain-controls__notch-tick" />
+                <span className="rain-controls__notch-label">{cat.label}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
 

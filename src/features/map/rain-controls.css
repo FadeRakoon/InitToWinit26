@@ -20,7 +20,7 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.6rem;
   font-size: 0.8rem;
 }
 
@@ -45,8 +45,9 @@
 
 .rain-controls__track-wrap {
   position: relative;
-  padding-bottom: 2.4rem;
-  margin-bottom: 0.25rem;
+  padding-top: 1.5rem;
+  padding-bottom: 0.25rem;
+  margin-bottom: 0;
 }
 
 .rain-controls__slider {
@@ -88,16 +89,15 @@
 
 .rain-controls__notches {
   position: absolute;
-  top: 10px;
+  top: 9px;
   left: 0;
   right: 0;
-  height: 2rem;
+  height: 1.5rem;
   pointer-events: none;
 }
 
 .rain-controls__notch {
   position: absolute;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -113,6 +113,23 @@
 
 .rain-controls__notch:hover {
   opacity: 1;
+}
+
+.rain-controls__notch--above {
+  transform: translateX(-50%);
+  flex-direction: column-reverse;
+}
+
+.rain-controls__notch--below {
+  transform: translateX(-50%);
+}
+
+.rain-controls__notch--edge-left {
+  left: 3% !important;
+}
+
+.rain-controls__notch--edge-right {
+  left: 97% !important;
 }
 
 .rain-controls__notch-tick {
@@ -134,8 +151,8 @@
 .rain-controls__legend {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  margin-top: 0.5rem;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
   font-size: 0.72rem;
   color: var(--text-muted, #64748b);
 }
