@@ -128,7 +128,12 @@ describe('winston.server', () => {
 
   it('streams tool calls and the final assistant answer with a mock model', async () => {
     const dataModule = await import('./insightsData.server')
-    const toolInput = JSON.stringify({ center: region.center })
+    const toolInput = JSON.stringify({
+      center: {
+        lng: region.center[0],
+        lat: region.center[1],
+      },
+    })
     const streams = [
       {
         stream: simulateReadableStream<any>({

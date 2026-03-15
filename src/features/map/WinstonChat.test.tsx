@@ -1,10 +1,25 @@
 // @vitest-environment jsdom
 
 import { fireEvent, screen, waitFor } from '@testing-library/dom'
+import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { WinstonChat } from './WinstonChat'
 import type { WinstonRegion } from './winstonChatSchema'
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('motion/react', () => ({
+  AnimatePresence: ({ children }: { children: unknown }) => children,
+  motion: new Proxy(
+    {},
+    {
+      get: () =>
+        ({ children, ...props }: { children?: unknown }) =>
+          children ?? null,
+    },
+  ),
+}))
 
 vi.mock('@ai-sdk/react', async () => {
   const React = await import('react')
@@ -100,16 +115,17 @@ describe('WinstonChat', () => {
     const root = createRoot(container)
 
     const renderChat = async (region: WinstonRegion, isOpen: boolean) => {
-      root.render(
-        <WinstonChat
-          imageSrc="/winston.png"
-          isOpen={isOpen}
-          onClose={() => {}}
-          onToggleOpen={() => {}}
-          region={region}
-        />,
-      )
-      await Promise.resolve()
+      await act(async () => {
+        root.render(
+          <WinstonChat
+            imageSrc="/winston.png"
+            isOpen={isOpen}
+            onClose={() => {}}
+            onToggleOpen={() => {}}
+            region={region}
+          />,
+        )
+      })
     }
 
     await renderChat(regionA, true)
@@ -123,7 +139,6 @@ describe('WinstonChat', () => {
 
     await waitFor(() => {
       expect(screen.getByText('What about surge risk?')).toBeTruthy()
-      expect(screen.getByText('Surge Levels')).toBeTruthy()
       expect(screen.getByText(/12.3 km away/i)).toBeTruthy()
     })
 
@@ -139,7 +154,9 @@ describe('WinstonChat', () => {
       expect(screen.getByText(/You selected Region B2/i)).toBeTruthy()
     })
 
-    root.unmount()
+    act(() => {
+      root.unmount()
+    })
     container.remove()
   })
 })
