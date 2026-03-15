@@ -70,8 +70,8 @@ export function TerrainPopup({
             paint: {
               'hillshade-exaggeration': 0.8,
               'hillshade-shadow-color': '#1a1a2e',
-              'hillshade-highlight-color': '#60d4ff',
-              'hillshade-accent-color': '#38bdf8',
+              'hillshade-highlight-color': '#608aff',
+              'hillshade-accent-color': '#38f872',
             },
           },
         ],
