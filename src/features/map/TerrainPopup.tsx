@@ -2,10 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import {
+  TERRAIN_BASE_SHIFT,
+  TERRAIN_BLUE_FACTOR,
   DEFAULT_MAP_ZOOM,
   TERRAIN_EXAGGERATION,
+  TERRAIN_GREEN_FACTOR,
+  TERRAIN_HILLSHADE_SOURCE_ID,
   TERRAIN_MAX_ZOOM,
   TERRAIN_MIN_ZOOM,
+  TERRAIN_RED_FACTOR,
+  TERRAIN_SOURCE_ID,
   TERRAIN_TILE_URL,
 } from './config'
 import type { BoundsTuple, LngLatTuple } from './types'
@@ -38,19 +44,27 @@ export function TerrainPopup({
       style: {
         version: 8,
         sources: {
-          'terrain-source': {
+          [TERRAIN_SOURCE_ID]: {
             type: 'raster-dem',
             tiles: [TERRAIN_TILE_URL],
             tileSize: 256,
-            encoding: 'mapbox',
+            encoding: 'custom',
+            redFactor: TERRAIN_RED_FACTOR,
+            greenFactor: TERRAIN_GREEN_FACTOR,
+            blueFactor: TERRAIN_BLUE_FACTOR,
+            baseShift: TERRAIN_BASE_SHIFT,
             minzoom: TERRAIN_MIN_ZOOM,
             maxzoom: TERRAIN_MAX_ZOOM,
           },
-          'hillshade-source': {
+          [TERRAIN_HILLSHADE_SOURCE_ID]: {
             type: 'raster-dem',
             tiles: [TERRAIN_TILE_URL],
             tileSize: 256,
-            encoding: 'mapbox',
+            encoding: 'custom',
+            redFactor: TERRAIN_RED_FACTOR,
+            greenFactor: TERRAIN_GREEN_FACTOR,
+            blueFactor: TERRAIN_BLUE_FACTOR,
+            baseShift: TERRAIN_BASE_SHIFT,
             minzoom: TERRAIN_MIN_ZOOM,
             maxzoom: TERRAIN_MAX_ZOOM,
           },
@@ -66,7 +80,7 @@ export function TerrainPopup({
           {
             id: 'terrain-hillshade',
             type: 'hillshade',
-            source: 'hillshade-source',
+            source: TERRAIN_HILLSHADE_SOURCE_ID,
             paint: {
               'hillshade-exaggeration': 0.8,
               'hillshade-shadow-color': '#1a1a2e',
@@ -80,20 +94,15 @@ export function TerrainPopup({
       zoom: DEFAULT_MAP_ZOOM + 2,
       pitch: 60,
       bearing: -30,
+      maxZoom: TERRAIN_MAX_ZOOM,
+      minZoom: TERRAIN_MIN_ZOOM,
     })
 
     map.on('load', () => {
-      console.log('[terrain] Map loaded, setting terrain')
-
-      const source = map.getSource('terrain-source')
-      console.log('[terrain] Source:', source)
-
       map.setTerrain({
-        source: 'terrain-source',
+        source: TERRAIN_SOURCE_ID,
         exaggeration: TERRAIN_EXAGGERATION,
       })
-
-      console.log('[terrain] Terrain set')
 
       const [sw, ne] = bounds
       map.fitBounds(
@@ -106,24 +115,14 @@ export function TerrainPopup({
           duration: 1000,
           pitch: 60,
           bearing: -30,
+          maxZoom: TERRAIN_MAX_ZOOM,
         },
       )
 
       setIsLoading(false)
     })
 
-    map.on('terrain', (e) => {
-      console.log('[terrain] Terrain event:', e)
-    })
-
-    map.on('sourcedata', (e) => {
-      if (e.isSourceLoaded && e.sourceId === 'terrain-dem') {
-        console.log('[terrain] Terrain source loaded')
-      }
-    })
-
     map.on('error', (e) => {
-      console.error('[terrain] Map error:', e.error)
       setError('Failed to initialize terrain view')
       setIsLoading(false)
     })
